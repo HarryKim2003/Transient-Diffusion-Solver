@@ -19,7 +19,7 @@ println("hello world")
 gr();
 
 #Grid Settings
-N = 200; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
+N = 40; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
 L = 0.01 # domain length in meters (1cm)
 dx = L/N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
