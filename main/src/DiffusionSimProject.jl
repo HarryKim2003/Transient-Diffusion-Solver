@@ -26,6 +26,14 @@ L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
 
+
+#BOUNDARY CONDITIONS: NOTE: CHANGE THESE FOR DIFFERENT BOUNDARY CONDITIONS!!
+#For now, the code is set to have a left boundary condition of 1.0 and a right boundary condition of 0.0
+#Might want to optimize for differnet options in the future.
+
+C_left = 1.0
+C_right = 0.0
+
 #Time settings 
 tspan = (0.0, 5.0) #simuates 0 to 5 second
 
@@ -65,11 +73,14 @@ function build_diffusion_matrix(N, dx, D)
     A .*= (D / dx^2) # Scale the matrix by D/dx^2
 
     u0 = zeros(N2) # Initial condition: all zeros (no concentration)
+    
     for j in 1:N
         for i in 1:N
             idx = (j - 1) * N + i #flattened index
+            # u0[idx] = 0.0  # Entire domain starts at zero
+
             if i == 1 #Left boundary condition
-                u0[idx] = 1.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
+                u0[idx] = 0.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
                 A[idx, :] .= 0.0
                 A[idx, idx] = 1.0
                 #I think Prof Jeff wanted 1:0, 1:1, etc...      
@@ -95,9 +106,16 @@ function transient_equation(N, dx, D)
     # f(du, u, p, t) = mul!(du, A, u); #du = A * u
 
     function f!(du, u, p, t)
+        # Enforce boundary values *before* applying A
+        u[1:N:end] .= C_left
+        u[N:N:end] .= C_right
+
+        # Then apply the diffusion operator
         mul!(du, A, u)
-        du[1:N:end] .= 0.0  # Left boundary (fixed to C = 1)
-        du[N:N:end] .= 0.0  # Right boundary (fixed to C = 0)
+
+        # After computing du = A*u, fix the BCs
+        du[1:N:end] .= 0.0
+        du[N:N:end] .= 0.0
     end
 
 
@@ -138,7 +156,7 @@ function transient_equation(N, dx, D)
     #     println("─────────────────────────────────────")
     # end
 
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05);
     # sol = solve(prob, Rodas5(); saveat=range(0, stop=5.0, length=300))
 
 
@@ -151,6 +169,8 @@ function transient_equation(N, dx, D)
 
     maxC = maximum(sim_concs)
     idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
+    idx_stop = isnothing(idx_stop) ? length(sim_concs) : max(idx_stop, 20)
+
 
     if isnothing(idx_stop)
         idx_stop = length(sim_concs)
@@ -164,7 +184,8 @@ function transient_equation(N, dx, D)
     println("Simulation complete. Plotting final concentration...") #for testing.(thankyou copilot)
     final_u = sol[end]
     final_C = reshape(final_u, N, N) # Reshape to 2D grid
-    final_C_norm = (final_C .- minimum(final_C)) ./ (maximum(final_C) - minimum(final_C)) # Normalize to [0, 1]
+    # final_C_norm = (final_C .- minimum(final_C)) ./ (maximum(final_C) - minimum(final_C)) # Normalize to [0, 1]
+    final_C_norm = (final_C .- C_right) ./ (C_left - C_right)
 
     #############
     # avg_dC_dx = mean(final_C_norm[:, 2] .- final_C_norm[:, 1]) / dx  # average gradient near inlet
@@ -199,22 +220,21 @@ end
 #     return C_L - (2*C_L/ π) * sum;
 # end;
 
-function analytical_concentration(t, D_eff, x; C_L=1.0, L=0.01, terms=100) #Python was sum_num = 100, but increasing for accuracy...
+function analytical_concentration(t, D_eff, x;terms=100)
     sum = 0.0
     for n in 1:terms
         sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
     end
-    return C_L * (1 - x / L) - (2 * C_L / π) * sum
+    return C_right + (C_left - C_right) * ((1 - x / L) - (2 / π) * sum)
 end
-
 
 function analytical_steady_state_concentration(x; L=0.01, C_L=1.0, sum_num=100)
     sum_value = 0.0
-    for n in 1:sum_num
-        sum_value += (1 / n) * sin(n * π * x / L)
+    sum = 0.0
+    for n in 1:terms
+        sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
     end
-    C = C_L - (C_L * x / L) - (2 * C_L / π) * sum_value
-    return C
+    return C_right + (C_left - C_right) * ((1 - x / L) - (2 / π) * sum)
 end
 
 # Wrapper for curve fitting
@@ -350,13 +370,14 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
         seriestype=:scatter, label="Mean D_eff per column",
         xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
 
-    # # Histogram
+    # Histogram
     # d_vals = filter(!isnan, d_eff_array)
     # histogram(d_vals, bins=100, title="D_eff Distribution",
     #     xlabel="D_eff", ylabel="Count", label="", legend=false, xlims=(2.0e-5, 3.0e-5))
 end
 
 
-sol, sim_times = transient_equation(N, dx, D);
+transient_equation(N, dx, D);
+# sol, sim_times = transient_equation(N, dx, D);
 extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 
