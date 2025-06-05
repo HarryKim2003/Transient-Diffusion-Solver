@@ -9,19 +9,21 @@ using BenchmarkTools
 using DifferentialEquations
 using SparseArrays
 using LinearAlgebra
-using Plots 
+using Plots
 using ColorSchemes
 using Statistics
 using LsqFit
+using KrylovKit
+
 println("hello world")
 
 #Part 1: Building the bulk; open air experiment 
 gr();
 
 #Grid Settings
-N = 200; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
+N = 150; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
 L = 0.01 # domain length in meters (1cm)
-dx = L/N # grid spacing in meters
+dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
 
 #Time settings 
@@ -32,54 +34,54 @@ function build_diffusion_matrix(N, dx, D)
 
     # Create the sparse matrix A
     N2 = N * N # Total number of grid points
-    A = spzeros(Float64, N2, N2); # Initialize a sparse matrix of size N^2 x N^2
+    A = spzeros(Float64, N2, N2) # Initialize a sparse matrix of size N^2 x N^2
 
     # Fill the sparse matrix A with the finite difference coefficients
     for i in 1:N
         for j in 1:N
-            idx = (j - 1) * N + i;
+            idx = (j - 1) * N + i
 
             if i == 1 || i == N #Boundary conditions 
-                A[idx, idx] = 1.0;  #sets these as 1.0 to represent fixed boundary conditions
-                continue;
-            end;
+                A[idx, idx] = 1.0  #sets these as 1.0 to represent fixed boundary conditions
+                continue
+            end
 
             #initializing boundary diffusion logic
             if i > 1
-                A[idx, idx - 1] = 1  # Left
+                A[idx, idx-1] = 1  # Left
             end
             if i < N
-                A[idx, idx + 1] = 1  # Right
+                A[idx, idx+1] = 1  # Right
             end
             if j > 1
-                A[idx, idx - N] = 1  # Down
+                A[idx, idx-N] = 1  # Down
             end
             if j < N
-                A[idx, idx + N] = 1  # Up
+                A[idx, idx+N] = 1  # Up
             end
-            A[idx, idx] = - (i > 1) - (i < N) - (j > 1) - (j < N)
-        end;
-    end;
-    A .*= (D / dx^2); # Scale the matrix by D/dx^2
+            A[idx, idx] = -(i > 1) - (i < N) - (j > 1) - (j < N)
+        end
+    end
+    A .*= (D / dx^2) # Scale the matrix by D/dx^2
 
-    u0 = zeros(N2); # Initial condition: all zeros (no concentration)
+    u0 = zeros(N2) # Initial condition: all zeros (no concentration)
     for j in 1:N
-        for i in 1:N 
-            idx = (j - 1) * N + i; #flattened index
+        for i in 1:N
+            idx = (j - 1) * N + i #flattened index
             if i == 1 #Left boundary condition
-                u0[idx] = 1.0; #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
+                u0[idx] = 1.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
                 A[idx, :] .= 0.0
                 A[idx, idx] = 1.0
                 #I think Prof Jeff wanted 1:0, 1:1, etc...      
             elseif i == N  #Right boundary condition
-                u0[idx] = 0.0; #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
+                u0[idx] = 0.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
                 A[idx, :] .= 0.0
                 A[idx, idx] = 1.0
             else
-                u0[idx] = 0.0; #initially all zeros.
-            end;
-        end;
-    end;
+                u0[idx] = 0.0 #initially all zeros.
+            end
+        end
+    end
 
     return A, u0
 end
@@ -99,12 +101,14 @@ function transient_equation(N, dx, D)
     end
 
 
-    prob = ODEProblem(f!, u0, tspan);
+    prob = ODEProblem(f!, u0, tspan)
     solvers = [TRBDF2(), Rosenbrock23(), KenCarp4(), Rodas5()]
     # solver_names = ["TRBDF2", "Rosenbrock23", "KenCarp4", "Rodas5"]
     solver_names = ["KenCarp4"]
     save_times = range(0.0, 5.0, length=300)
 
+
+    ##BENCHMARK TEST FOR DIFFERENT SOLVERS 
     # for (i, solver) in enumerate(solvers)
     #     println("🔧 Trying solver: ", solver_names[i])
 
@@ -134,12 +138,12 @@ function transient_equation(N, dx, D)
     #     println("─────────────────────────────────────")
     # end
 
-    sol = solve(prob, KenCarp4(); saveat=0.05); #Save sample every 0.05 seconds
+    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
     # sol = solve(prob, Rodas5(); saveat=range(0, stop=5.0, length=300))
 
-    
-    row = div(N, 2);
-    col = div(N, 2);
+
+    row = div(N, 2)
+    col = div(N, 2)
     idxs = [(j - 1) * N + col for j in 1:N]  # all rows at center column
 
     sim_concs = [mean(u[idxs]) for u in sol.u]
@@ -158,10 +162,10 @@ function transient_equation(N, dx, D)
 
     # Plot the solution
     println("Simulation complete. Plotting final concentration...") #for testing.(thankyou copilot)
-    final_u = sol[end];
+    final_u = sol[end]
     final_C = reshape(final_u, N, N) # Reshape to 2D grid
     final_C_norm = (final_C .- minimum(final_C)) ./ (maximum(final_C) - minimum(final_C)) # Normalize to [0, 1]
- 
+
     #############
     # avg_dC_dx = mean(final_C_norm[:, 2] .- final_C_norm[:, 1]) / dx  # average gradient near inlet
     # J = -avg_dC_dx  # flux at left wall (Fick's Law)
@@ -174,16 +178,17 @@ function transient_equation(N, dx, D)
     reversed_rainbow = reverse(ColorSchemes.rainbow.colors)
 
     p = heatmap(final_C_norm',
-                title="Final Concentration Distribution",
-                xlabel="X", ylabel="Y",
-                colorbar=true,
-                c=reversed_rainbow,
-                yflip=true)    
-    display(p);
+        title="Final Concentration Distribution",
+        xlabel="X", ylabel="Y",
+        colorbar=true,
+        c=reversed_rainbow,
+        yflip=true)
+    display(p)
     gui()
 
     # fit_D_eff(sim_times, sim_concs, idx_stop) #For the middle pore, creates a graph... WIll extend to multi later 
     fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
+    return sol, sim_times
 end
 
 # function analytical_concentration(t, D_eff, x; C_L = 1.0, L=0.01, terms = 100)
@@ -194,10 +199,10 @@ end
 #     return C_L - (2*C_L/ π) * sum;
 # end;
 
-function analytical_concentration(t, D_eff, x; C_L = 1.0, L=0.01, terms = 100) #Python was sum_num = 100, but increasing for accuracy...
+function analytical_concentration(t, D_eff, x; C_L=1.0, L=0.01, terms=100) #Python was sum_num = 100, but increasing for accuracy...
     sum = 0.0
     for n in 1:terms
-        sum += (1/n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
+        sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
     end
     return C_L * (1 - x / L) - (2 * C_L / π) * sum
 end
@@ -255,7 +260,7 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
 
     # Create a single figure to plot all curves
     p = plot(title="Transient Diffusion Fit at Virtual Pores",
-             xlabel="Time [s]", ylabel="Concentration")
+        xlabel="Time [s]", ylabel="Concentration")
 
     for (i, col) in enumerate(col_indices)
         idx = (row - 1) * N + col                      # Convert (i,j) to flat index
@@ -274,11 +279,11 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
 
         # Plot simulation + fit on the same figure
         plot!(p, sim_times, sim_concs,
-              label="x = $(labels[i]) concentration", lw=2,
-              marker=markers[i], color=colors[i])
+            label="x = $(labels[i]) concentration", lw=2,
+            marker=markers[i], color=colors[i])
         plot!(p, sim_times, model(sim_times, fit.param),
-              label="x = $(labels[i]) fitted plot", lw=2,
-              linestyle=:dash, color=colors[i])
+            label="x = $(labels[i]) fitted plot", lw=2,
+            linestyle=:dash, color=colors[i])
     end
 
     display(p)  # Show the combined plot
@@ -286,5 +291,72 @@ end
 
 
 
+function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
+    println("📊 Fitting all virtual pores...")
 
-transient_equation(N, dx, D);
+    d_eff_array = Float64[]
+    d_eff_profile = Float64[]
+    x_arr = Float64[]
+    d_eff_buffer = Float64[]
+    pore_ctr = 0
+
+    x_positions = range(dx, stop=L - dx, length=N - 2)
+
+    for i in 2:N-1  # x-direction (skip boundaries)
+        for j in 1:N  # y-direction (all rows)
+            idx = (j - 1) * N + i
+            sim_concs = [u[idx] for u in sol.u]
+
+            # Fit only until 90% rise
+            maxC = maximum(sim_concs)
+            idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
+            idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
+
+            p0 = [1e-5]
+            model(t, p) = [analytical_concentration(ti, p[1], i * dx) for ti in t]
+
+            try
+                fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
+                D_fit = fit.param[1]
+                push!(d_eff_array, D_fit)
+                push!(d_eff_buffer, D_fit)
+            catch
+                push!(d_eff_array, NaN)
+                push!(d_eff_buffer, NaN)
+            end
+
+            pore_ctr += 1
+            if pore_ctr % N == 9
+                push!(d_eff_profile, mean(skipmissing(d_eff_buffer)))
+                push!(x_arr, i * dx)
+                empty!(d_eff_buffer)
+            end
+        end
+    end
+
+    # Visualize D_eff Map <-- this is broken right now
+    # try
+    #     D_map = reshape(d_eff_array, N - 2, N) |> x -> reverse(x, dims=2)
+    #     heatmap(D_map',
+    #         title="D_eff Map",
+    #         xlabel="x index", ylabel="y index",
+    #         colorbar=true, c=:viridis, yflip=true)
+    # catch e
+    #     println("Could not reshape D_eff map: ", e)
+    # end
+
+    # D_eff Profile vs X
+    plot(x_arr, d_eff_profile,
+        seriestype=:scatter, label="Mean D_eff per column",
+        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
+
+    # # Histogram
+    # d_vals = filter(!isnan, d_eff_array)
+    # histogram(d_vals, bins=100, title="D_eff Distribution",
+    #     xlabel="D_eff", ylabel="Count", label="", legend=false, xlims=(2.0e-5, 3.0e-5))
+end
+
+
+sol, sim_times = transient_equation(N, dx, D);
+extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
+
