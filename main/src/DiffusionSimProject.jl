@@ -21,7 +21,7 @@ println("hello world")
 gr();
 
 #Grid Settings
-N = 150; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
+N = 40; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
 L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
@@ -73,7 +73,7 @@ function build_diffusion_matrix(N, dx, D)
     A .*= (D / dx^2) # Scale the matrix by D/dx^2
 
     u0 = zeros(N2) # Initial condition: all zeros (no concentration)
-    
+
     for j in 1:N
         for i in 1:N
             idx = (j - 1) * N + i #flattened index
@@ -120,57 +120,14 @@ function transient_equation(N, dx, D)
 
 
     prob = ODEProblem(f!, u0, tspan)
-    solvers = [TRBDF2(), Rosenbrock23(), KenCarp4(), Rodas5()]
-    # solver_names = ["TRBDF2", "Rosenbrock23", "KenCarp4", "Rodas5"]
-    solver_names = ["KenCarp4"]
-    save_times = range(0.0, 5.0, length=300)
+    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
 
-
-    ##BENCHMARK TEST FOR DIFFERENT SOLVERS 
-    # for (i, solver) in enumerate(solvers)
-    #     println("🔧 Trying solver: ", solver_names[i])
-
-    #     @time sol = solve(prob, solver; saveat=save_times, abstol=1e-8, reltol=1e-8)
-
-    #     # Extract D_eff values at x = 0.25L, 0.5L, 0.75L
-    #     x_positions = [0.25 * L, 0.5 * L, 0.75 * L]
-    #     col_indices = [Int(round(x / dx)) for x in x_positions]
-    #     row = div(N, 2)
-
-    #     println("📈 Recovered D_eff values:")
-    #     for (j, col) in enumerate(col_indices)
-    #         idx = (row - 1) * N + col
-    #         sim_concs = [u[idx] for u in sol.u]
-
-    #         maxC = maximum(sim_concs)
-    #         idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
-    #         idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
-
-    #         p0 = [1e-5]
-    #         model(t, p) = [analytical_concentration(ti, p[1], col * dx) for ti in t]
-    #         fit = curve_fit(model, save_times[1:idx_stop], sim_concs[1:idx_stop], p0)
-
-    #         println("x = $(x_positions[j]/L)L, D_eff ≈ $(fit.param[1])")
-    #     end
-
-    #     println("─────────────────────────────────────")
-    # end
-
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05);
-    # sol = solve(prob, Rodas5(); saveat=range(0, stop=5.0, length=300))
-
-
-    row = div(N, 2)
     col = div(N, 2)
     idxs = [(j - 1) * N + col for j in 1:N]  # all rows at center column
-
     sim_concs = [mean(u[idxs]) for u in sol.u]
-    # sim_concs = (sim_concs .- minimum(sim_concs)) ./ (maximum(sim_concs) - minimum(sim_concs))
-
     maxC = maximum(sim_concs)
     idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
     idx_stop = isnothing(idx_stop) ? length(sim_concs) : max(idx_stop, 20)
-
 
     if isnothing(idx_stop)
         idx_stop = length(sim_concs)
@@ -186,16 +143,6 @@ function transient_equation(N, dx, D)
     final_C = reshape(final_u, N, N) # Reshape to 2D grid
     # final_C_norm = (final_C .- minimum(final_C)) ./ (maximum(final_C) - minimum(final_C)) # Normalize to [0, 1]
     final_C_norm = (final_C .- C_right) ./ (C_left - C_right)
-
-    #############
-    # avg_dC_dx = mean(final_C_norm[:, 2] .- final_C_norm[:, 1]) / dx  # average gradient near inlet
-    # J = -avg_dC_dx  # flux at left wall (Fick's Law)
-    # delta_C = 1.0   # inlet concentration - outlet concentration
-    # D_eff_est = J * L / delta_C
-
-    # println("Estimated D_eff from final profile: ", D_eff_est)
-    #############
-
     reversed_rainbow = reverse(ColorSchemes.rainbow.colors)
 
     p = heatmap(final_C_norm',
@@ -207,29 +154,12 @@ function transient_equation(N, dx, D)
     display(p)
     gui()
 
-    # fit_D_eff(sim_times, sim_concs, idx_stop) #For the middle pore, creates a graph... WIll extend to multi later 
     fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     return sol, sim_times
 end
 
-# function analytical_concentration(t, D_eff, x; C_L = 1.0, L=0.01, terms = 100)
-#     sum = 0.0;
-#     for n in 1:terms
-#         sum += (1/n)*sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2);
-#     end;
-#     return C_L - (2*C_L/ π) * sum;
-# end;
 
-function analytical_concentration(t, D_eff, x;terms=100)
-    sum = 0.0
-    for n in 1:terms
-        sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
-    end
-    return C_right + (C_left - C_right) * ((1 - x / L) - (2 / π) * sum)
-end
-
-function analytical_steady_state_concentration(x; L=0.01, C_L=1.0, sum_num=100)
-    sum_value = 0.0
+function analytical_concentration(t, D_eff, x; terms=100)
     sum = 0.0
     for n in 1:terms
         sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
@@ -244,29 +174,6 @@ function model_wrapper(p, tvec)
     return [analytical_concentration(t, D_eff, x) for t in tvec]
 end
 
-
-function fit_D_eff(sim_times, sim_concs, idx_stop)
-    # sim_times = vec(sim_times)
-    # sim_concs = vec(sim_concs)
-
-    # Initial guess
-    p0 = [1e-5]
-
-    # Define model function for LsqFit
-    model(t, p) = [analytical_concentration(ti, p[1], 0.5 * L) for ti in t]
-
-    # Perform curve fitting
-    fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
-    D_eff_fit = fit.param[1]
-    println("Recovered D_eff ≈ ", D_eff_fit)
-
-    # Plot
-    plot(sim_times, sim_concs, label="Simulation", lw=2)
-    plot!(sim_times, model(sim_times, fit.param), label="Fit", lw=2, linestyle=:dash)
-    xlabel!("Time [s]")
-    ylabel!("Concentration")
-    title!("Analytical Fit at Center Point")
-end
 
 function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     # Select virtual pore positions along the x-axis (normalized locations)
@@ -283,8 +190,13 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
         xlabel="Time [s]", ylabel="Concentration")
 
     for (i, col) in enumerate(col_indices)
-        idx = (row - 1) * N + col                      # Convert (i,j) to flat index
-        sim_concs = [u[idx] for u in sol.u]           # Concentration at this pore over time
+        # idx = (row - 1) * N + col                      # Convert (i,j) to flat index
+        # sim_concs = [u[idx] for u in sol.u]           # Concentration at this pore over time
+
+        col_indices = [(j - 1) * N + col for j in 1:N]
+        sim_concs = [mean(u[col_indices]) for u in sol.u]
+
+
 
         # Clip to 90% rise
         maxC = maximum(sim_concs)
@@ -294,6 +206,8 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
         # Fit analytical model to simulation data at this pore
         p0 = [1e-5]
         model(t, p) = [analytical_concentration(ti, p[1], col * dx) for ti in t]
+        sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
+
         fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
         println("x = ", labels[i], ", Recovered D_eff ≈ ", fit.param[1])
 
@@ -319,8 +233,6 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     x_arr = Float64[]
     d_eff_buffer = Float64[]
     pore_ctr = 0
-
-    x_positions = range(dx, stop=L - dx, length=N - 2)
 
     for i in 2:N-1  # x-direction (skip boundaries)
         for j in 1:N  # y-direction (all rows)
@@ -354,22 +266,11 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
         end
     end
 
-    # Visualize D_eff Map <-- this is broken right now
-    # try
-    #     D_map = reshape(d_eff_array, N - 2, N) |> x -> reverse(x, dims=2)
-    #     heatmap(D_map',
-    #         title="D_eff Map",
-    #         xlabel="x index", ylabel="y index",
-    #         colorbar=true, c=:viridis, yflip=true)
-    # catch e
-    #     println("Could not reshape D_eff map: ", e)
-    # end
 
     # D_eff Profile vs X
-    plot(x_arr, d_eff_profile,
-        seriestype=:scatter, label="Mean D_eff per column",
-        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
-
+    # plot(x_arr, d_eff_profile,
+    #     seriestype=:scatter, label="Mean D_eff per column",
+    #     xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
     # Histogram
     # d_vals = filter(!isnan, d_eff_array)
     # histogram(d_vals, bins=100, title="D_eff Distribution",
@@ -377,7 +278,7 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 end
 
 
-transient_equation(N, dx, D);
-# sol, sim_times = transient_equation(N, dx, D);
+# transient_equation(N, dx, D);
+sol, sim_times = transient_equation(N, dx, D);
 extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 

@@ -1,142 +1,121 @@
-# Tastefully written by Harry Kim
-# Date: June 3rd, 2025
-# 2B URA Project: Porous Materials Transitive Equation solver for Deff 
-# For Professor Jeff Gostick
+# Clean Julia version of Part 1 from OpenPNM Project 2
+# Author: Harry Kim | June 2025 | UW 2B URA Project
 
-using OrdinaryDiffEq
-using BenchmarkTools
 using DifferentialEquations
 using SparseArrays
 using LinearAlgebra
 using Plots
-using ColorSchemes
 using Statistics
 using LsqFit
 using KrylovKit
-using SparseArrays
-using Images
-using FileIO
 
-img = load("2bURA/main/data/porous_slice.png")
-if ndims(img) == 3  # color
-    img = channelview(img)[1, :, :]
-end
-mask = Float64.(img .> 0.5)  # 1.0 = pore, 0.0 = solid
 
-Nx, Ny = size(mask)
-L = 0.01
-D = 2.09488e-5
+# -------------------- Parameters --------------------
+C_left = 1.0
+C_right = 0.0
+L = 0.01                       # Domain length (m)
+N = 40                         # Grid resolution (NxN)
+dx = L / N                     # Grid spacing (m)
+D = 2.09488e-5                 # Bulk diffusivity of O2 in air (m^2/s)
+tspan = (0.0, 5.0)             # Time span (s)
+saveat = range(tspan[1], tspan[2], length=100)
 
-dx = L / Nx
-
-function analytical_concentration(t, D_eff, x; C_L=1.0, L=0.01, terms=100)
-    sum = 0.0
-    for n in 1:terms
-        sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
-    end
-    return C_L * (1 - x / L) - (2 * C_L / π) * sum
+# -------------------- Index Helpers --------------------
+function ij_to_idx(i, j, N)
+    return (j - 1) * N + i
 end
 
-function fit_selected_virtual_pores(sol, mask, dx, L)
-    Nx, Ny = size(mask)
-    sample_pores = [(20, 10), (20, 20), (20, 30)]  # y, x (row, col) in image indexing
-    colors = [:cyan, :green, :blue]
-    markers = [:star5, :utriangle, :cross]
+# -------------------- Build Laplacian --------------------
+function build_laplacian(N, dx, D)
+    size = N * N
+    A = spzeros(size, size)
+    for j in 1:N
+        for i in 1:N
+            idx = ij_to_idx(i, j, N)
 
-    sim_times = sol.t
-    p = plot(title="Fitted D_eff at Selected Pores", xlabel="Time", ylabel="Concentration", legend=:outertopright)
-
-    for (idx, (j, i)) in enumerate(sample_pores)
-        flat_idx = (j - 1) * Nx + i
-        sim_concs = [u[flat_idx] for u in sol.u]
-        maxC = maximum(sim_concs)
-        idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
-        idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
-
-        p0 = [1e-5]
-        model(t, p) = [analytical_concentration(ti, p[1], i * dx) for ti in t]
-        fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
-        D_eff = fit.param[1]
-
-        println("D_eff for pore ($(j), $(i)) ≈ ", D_eff)
-
-        plot!(p, sim_times, sim_concs, label="Pore $(j),$(i) concentration", lw=2, marker=markers[idx], color=colors[idx])
-        plot!(p, sim_times, model(sim_times, fit.param), label="Pore $(j),$(i) fitted", lw=2, linestyle=:dash, color=colors[idx])
-    end
-
-    display(p)
-end
-
-function build_diffusion_matrix(mask::Array{Float64,2}, dx, D)
-    Nx, Ny = size(mask)
-    N2 = Nx * Ny
-    A = spzeros(Float64, N2, N2)
-    u0 = zeros(N2)
-
-    for i in 1:Nx, j in 1:Ny
-        idx = (j - 1) * Nx + i
-
-        if mask[i, j] == 0.0
-            A[idx, idx] = 1.0
-            continue
-        end
-
-        if i > 1 && mask[i-1, j] == 1.0
-            A[idx, idx-1] = 1.0
-        end
-        if i < Nx && mask[i+1, j] == 1.0
-            A[idx, idx+1] = 1.0
-        end
-        if j > 1 && mask[i, j-1] == 1.0
-            A[idx, idx-Nx] = 1.0
-        end
-        if j < Ny && mask[i, j+1] == 1.0
-            A[idx, idx+Nx] = 1.0
-        end
-
-        A[idx, idx] = -sum([
-            i > 1 && mask[i-1, j] == 1.0,
-            i < Nx && mask[i+1, j] == 1.0,
-            j > 1 && mask[i, j-1] == 1.0,
-            j < Ny && mask[i, j+1] == 1.0
-        ])
-    end
-
-    A .*= (D / dx^2)
-
-    for i in 1:Nx, j in 1:Ny
-        idx = (j - 1) * Nx + i
-        if mask[i, j] == 1.0
             if i == 1
-                u0[idx] = 1.0
-                A[idx, :] .= 0.0
-                A[idx, idx] = 1.0
-            elseif i == Nx
-                u0[idx] = 0.0
-                A[idx, :] .= 0.0
-                A[idx, idx] = 1.0
+                A[idx, idx] = 1.0  # Left Dirichlet
+            elseif i == N
+                A[idx, idx] = 1.0  # Right Dirichlet
+            else
+                A[idx, idx] = -4.0
+                A[idx, ij_to_idx(i + 1, j, N)] = 1.0
+                A[idx, ij_to_idx(i - 1, j, N)] = 1.0
+                if j > 1
+                    A[idx, ij_to_idx(i, j - 1, N)] = 1.0
+                end
+                if j < N
+                    A[idx, ij_to_idx(i, j + 1, N)] = 1.0
+                end
             end
         end
     end
-
-    return A, u0
+    return D / dx^2 * A
 end
 
-function simulate_diffusion_from_image(mask::Array{Float64,2}, dx, D; tspan=(0.0, 5.0))
-    A, u0 = build_diffusion_matrix(mask, dx, D)
-
-    function f!(du, u, p, t)
-        mul!(du, A, u)
+# -------------------- ODE Function --------------------
+function diffusion_ode!(du, u, p, t)
+    du .= p * u
+    # Dirichlet BC enforcement
+    for j in 1:N
+        du[ij_to_idx(1, j, N)] = 0.0  # Constant
+        du[ij_to_idx(N, j, N)] = 0.0
     end
-
-    prob = ODEProblem(f!, u0, tspan)
-    sol = solve(prob, TRBDF2(linsolve=KrylovJL_GMRES()); saveat=0.05)
-
-    final_C = reshape(sol[end], size(mask)...)
-    heatmap(final_C', title="Final Concentration (Image-Based)", yflip=true, c=:viridis)
-
-    return sol
 end
 
-sol = simulate_diffusion_from_image(mask, dx, D)
-fit_selected_virtual_pores(sol, mask, dx, L)
+# -------------------- Initial & Boundary --------------------
+u0 = zeros(N * N)
+for j in 1:N
+    u0[ij_to_idx(1, j, N)] = C_left
+    u0[ij_to_idx(N, j, N)] = C_right
+end
+
+A = build_laplacian(N, dx, D)
+prob = ODEProblem(diffusion_ode!, u0, tspan, A)
+sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=saveat)
+# -------------------- Postprocess --------------------
+function reshape_solution(solvec, N)
+    return reshape(solvec, N, N)'
+end
+
+final = reshape_solution(sol[end], N)
+heatmap(final, title="Concentration Map (t = $(tspan[2])s)", color=:viridis, aspect_ratio=1)
+
+# -------------------- Fit Analytical --------------------
+function analytical_func(t, p, x; C_l=C_left, L=L, N_terms=100)
+    D_eff = p[1]
+    t = isa(t, Number) ? [t] : t
+    sum_val = zeros(length(t))
+    for n in 1:N_terms
+        term = (1 / n) * sin(n * π * x / L) .* exp.(-n^2 * π^2 * D_eff .* t ./ L^2)
+        sum_val .+= term
+    end
+    return C_l .* (1 .- x / L .- (2 / π) .* sum_val)
+end
+
+# Pick centerline pores: 0.25L, 0.5L, 0.75L along x, at center y
+x_positions = [0.25L, 0.5L, 0.75L]
+i_indices = round.(Int, x_positions ./ dx)
+j_center = div(N, 2)
+pore_indices = ij_to_idx.(i_indices, j_center, N)
+
+for (i, idx) in enumerate(pore_indices)
+    data_t = saveat
+    data_C = sol[idx, :]
+    max_C = maximum(data_C)
+    start_idx = findfirst(>(0.01 * max_C), data_C)
+    stop_idx = findfirst(>(0.9 * max_C), data_C)
+    t_fit = data_t[start_idx:stop_idx]
+    C_fit = data_C[start_idx:stop_idx]
+    fit = curve_fit((t, p) -> analytical_func(t, p, x_positions[i]), t_fit, C_fit, [D])
+    D_eff_est = fit.param[1]
+    println("x = $(x_positions[i]), Recovered D_eff ≈ ", D_eff_est)
+
+    plot(data_t, data_C, label="Numerical C(x,t)")
+    plot!(data_t, analytical_func.(data_t, Ref(fit.param), x_positions[i]), label="Fit")
+    title!("Pore @ x=$(x_positions[i])")
+    xlabel!("Time (s)")
+    ylabel!("Concentration")
+    display(current())
+end
+
