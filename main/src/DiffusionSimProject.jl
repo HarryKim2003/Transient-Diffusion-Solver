@@ -26,6 +26,12 @@ L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
 
+#For part 2 
+pore_diam = spacing * 0.75
+throat_diam = pore_diam * 0.5
+throat_len = spacing - pore_diam / 2 - pore_diam / 2
+A_throat = π * (throat_diam / 2)^2
+g = D * A_throat / throat_len  # [m³/s]
 
 #BOUNDARY CONDITIONS: NOTE: CHANGE THESE FOR DIFFERENT BOUNDARY CONDITIONS!!
 #For now, the code is set to have a left boundary condition of 1.0 and a right boundary condition of 0.0
@@ -36,6 +42,7 @@ C_right = 0.0
 
 #Time settings 
 tspan = (0.0, 5.0) #simuates 0 to 5 second
+save_times = range(tspan[1], tspan[2], length=300)
 
 # Matrix builder function for the 2D transient diffusion equation.
 function build_diffusion_matrix(N, dx, D)
@@ -96,6 +103,7 @@ function build_diffusion_matrix(N, dx, D)
 
     return A, u0
 end
+
 
 
 #Buiding the 2d transient diffusion equation.  
@@ -179,7 +187,6 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     # Select virtual pore positions along the x-axis (normalized locations)
     x_positions = [0.25 * L, 0.5 * L, 0.75 * L]
     col_indices = [Int(round(x / dx)) for x in x_positions]
-    row = div(N, 2)  # Middle row
 
     colors = [:cyan, :green, :blue]              # Different colors for each pore
     markers = [:star, :utriangle, :cross]        # Different marker styles
@@ -190,25 +197,24 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
         xlabel="Time [s]", ylabel="Concentration")
 
     for (i, col) in enumerate(col_indices)
-        # idx = (row - 1) * N + col                      # Convert (i,j) to flat index
-        # sim_concs = [u[idx] for u in sol.u]           # Concentration at this pore over time
+        col_idxs = [(j - 1) * N + col for j in 1:N]  # all rows at column col
+        sim_concs = [mean(u[col_idxs]) for u in sol.u]
 
-        col_indices = [(j - 1) * N + col for j in 1:N]
-        sim_concs = [mean(u[col_indices]) for u in sol.u]
-
+        # Normalize
+        sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
 
 
         # Clip to 90% rise
         maxC = maximum(sim_concs)
+        idx_start = findfirst(x -> x > 0.05 * maxC, sim_concs)
         idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
+        idx_start = isnothing(idx_start) ? 1 : idx_start
         idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
 
         # Fit analytical model to simulation data at this pore
         p0 = [1e-5]
         model(t, p) = [analytical_concentration(ti, p[1], col * dx) for ti in t]
-        sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
-
-        fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
+        fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
         println("x = ", labels[i], ", Recovered D_eff ≈ ", fit.param[1])
 
         # Plot simulation + fit on the same figure
@@ -220,11 +226,8 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
             linestyle=:dash, color=colors[i])
     end
 
-    display(p)  # Show the combined plot
+    display(p)
 end
-
-
-
 function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     println("📊 Fitting all virtual pores...")
 
@@ -233,6 +236,7 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     x_arr = Float64[]
     d_eff_buffer = Float64[]
     pore_ctr = 0
+
 
     for i in 2:N-1  # x-direction (skip boundaries)
         for j in 1:N  # y-direction (all rows)
@@ -268,15 +272,14 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 
 
     # D_eff Profile vs X
-    # plot(x_arr, d_eff_profile,
-    #     seriestype=:scatter, label="Mean D_eff per column",
-    #     xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
+    plot(x_arr, d_eff_profile,
+        seriestype=:scatter, label="Mean D_eff per column",
+        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
     # Histogram
     # d_vals = filter(!isnan, d_eff_array)
     # histogram(d_vals, bins=100, title="D_eff Distribution",
     #     xlabel="D_eff", ylabel="Count", label="", legend=false, xlims=(2.0e-5, 3.0e-5))
 end
-
 
 # transient_equation(N, dx, D);
 sol, sim_times = transient_equation(N, dx, D);
