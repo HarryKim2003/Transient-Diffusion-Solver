@@ -4,10 +4,14 @@
 # For Professor Jeff Gostick 
 
 
+# Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material.
+# Step 2: Make sure sparse arrays are being used 
+# Step 3: STart using GPU 
+
 using OrdinaryDiffEq
 using BenchmarkTools
 using DifferentialEquations
-using SparseArrays
+using SparseArrays #Note: Make sure sparse arrays are being used 
 using LinearAlgebra
 using Plots
 using ColorSchemes
@@ -26,7 +30,7 @@ println("hello world")
 gr();
 
 #Grid Settings
-N = 40; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
+N = 100; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
 L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
@@ -202,6 +206,8 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
         #NOTE: Apparently, curve_fit and other lsqfit methods in general are really bad.
         # The logistic decay instead of growth (expected (?)) is almsot certainly due to 
         # fitting methods / numerical overshooting 
+
+        #Possible problem: Fitting is using 40 terms, conc is using 39 
 
 
         println("x = ", labels[i], ", Recovered D_eff ≈ ", fit.param[1])
