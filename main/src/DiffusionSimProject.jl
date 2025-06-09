@@ -17,6 +17,7 @@ using KrylovKit
 
 println("hello world")
 
+
 #Part 1: Building the bulk; open air experiment 
 gr();
 
@@ -27,11 +28,11 @@ dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
 
 #For part 2 
-pore_diam = spacing * 0.75
-throat_diam = pore_diam * 0.5
-throat_len = spacing - pore_diam / 2 - pore_diam / 2
-A_throat = π * (throat_diam / 2)^2
-g = D * A_throat / throat_len  # [m³/s]
+# pore_diam = spacing * 0.75
+# throat_diam = pore_diam * 0.5
+# throat_len = spacing - pore_diam / 2 - pore_diam / 2
+# A_throat = π * (throat_diam / 2)^2
+# g = D * A_throat / throat_len  # [m³/s]
 
 #BOUNDARY CONDITIONS: NOTE: CHANGE THESE FOR DIFFERENT BOUNDARY CONDITIONS!!
 #For now, the code is set to have a left boundary condition of 1.0 and a right boundary condition of 0.0
@@ -87,12 +88,12 @@ function build_diffusion_matrix(N, dx, D)
             # u0[idx] = 0.0  # Entire domain starts at zero
 
             if i == 1 #Left boundary condition
-                u0[idx] = 0.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
+                u0[idx] = 0.0 
                 A[idx, :] .= 0.0
                 A[idx, idx] = 1.0
                 #I think Prof Jeff wanted 1:0, 1:1, etc...      
             elseif i == N  #Right boundary condition
-                u0[idx] = 0.0 #Note: CHANGE THIS FOR DIFFERENT BOUNDARY CONDITIONS!! 
+                u0[idx] = 0.0 
                 A[idx, :] .= 0.0
                 A[idx, idx] = 1.0
             else
@@ -104,14 +105,11 @@ function build_diffusion_matrix(N, dx, D)
     return A, u0
 end
 
-
-
 #Buiding the 2d transient diffusion equation.  
 function transient_equation(N, dx, D)
     A, u0 = build_diffusion_matrix(N, dx, D)
 
     # Create the ODE problem
-    # f(du, u, p, t) = mul!(du, A, u); #du = A * u
 
     function f!(du, u, p, t)
         # Enforce boundary values *before* applying A
@@ -125,7 +123,6 @@ function transient_equation(N, dx, D)
         du[1:N:end] .= 0.0
         du[N:N:end] .= 0.0
     end
-
 
     prob = ODEProblem(f!, u0, tspan)
     sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
@@ -143,7 +140,6 @@ function transient_equation(N, dx, D)
 
     sim_times = sol.t
 
-    # Normalize simulation concentrations to [0, 1]
 
     # Plot the solution
     println("Simulation complete. Plotting final concentration...") #for testing.(thankyou copilot)
@@ -166,13 +162,13 @@ function transient_equation(N, dx, D)
     return sol, sim_times
 end
 
-
 function analytical_concentration(t, D_eff, x; terms=100)
     sum = 0.0
     for n in 1:terms
-        sum += (1 / n) * sin(n * π * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
+        sum = sum + (C_left/n)*sin(n*pi*x/L)*exp(-n^2 * π^2 * D_eff * t / L^2)
     end
-    return C_right + (C_left - C_right) * ((1 - x / L) - (2 / π) * sum)
+
+    return (C_left - (C_left * (x / L)) - (2 / pi) * sum)  
 end
 
 # Wrapper for curve fitting
@@ -181,6 +177,7 @@ function model_wrapper(p, tvec)
     x = 0.5 * L
     return [analytical_concentration(t, D_eff, x) for t in tvec]
 end
+
 
 
 function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
@@ -228,6 +225,7 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
 
     display(p)
 end
+
 function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     println("📊 Fitting all virtual pores...")
 
@@ -285,3 +283,6 @@ end
 sol, sim_times = transient_equation(N, dx, D);
 extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 
+
+
+    
