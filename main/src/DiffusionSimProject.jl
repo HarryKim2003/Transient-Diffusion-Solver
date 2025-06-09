@@ -12,7 +12,11 @@ using LinearAlgebra
 using Plots
 using ColorSchemes
 using Statistics
-using LsqFit
+using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit 
+# https://www.reddit.com/r/Julia/comments/19e1qp3/goodness_of_fit_parameters_using_lsqfitjl/
+#maybe use seomething else? 
+
+
 using KrylovKit
 
 println("hello world")
@@ -82,26 +86,6 @@ function build_diffusion_matrix(N, dx, D)
 
     u0 = zeros(N2) # Initial condition: all zeros (no concentration)
 
-    for j in 1:N
-        for i in 1:N
-            idx = (j - 1) * N + i #flattened index
-            # u0[idx] = 0.0  # Entire domain starts at zero
-
-            if i == 1 #Left boundary condition
-                u0[idx] = 0.0 
-                A[idx, :] .= 0.0
-                A[idx, idx] = 1.0
-                #I think Prof Jeff wanted 1:0, 1:1, etc...      
-            elseif i == N  #Right boundary condition
-                u0[idx] = 0.0 
-                A[idx, :] .= 0.0
-                A[idx, idx] = 1.0
-            else
-                u0[idx] = 0.0 #initially all zeros.
-            end
-        end
-    end
-
     return A, u0
 end
 
@@ -117,7 +101,7 @@ function transient_equation(N, dx, D)
         u[N:N:end] .= C_right
 
         # Then apply the diffusion operator
-        mul!(du, A, u)
+        mul!(du, A, u)  # Compute du = A * u (diffusion) (doesn't allocate new memory apparently :o)
 
         # After computing du = A*u, fix the BCs
         du[1:N:end] .= 0.0
@@ -129,10 +113,13 @@ function transient_equation(N, dx, D)
 
     col = div(N, 2)
     idxs = [(j - 1) * N + col for j in 1:N]  # all rows at center column
-    sim_concs = [mean(u[idxs]) for u in sol.u]
+    sim_concs = [mean(u[idxs]) for u in sol.u] #Basically, average conc at each column.
+    #Probably unneccessary since the heat map final is uniform on the cols...v 
+
+
     maxC = maximum(sim_concs)
     idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
-    idx_stop = isnothing(idx_stop) ? length(sim_concs) : max(idx_stop, 20)
+    idx_stop = isnothing(idx_stop) ? length(sim_concs) : max(idx_stop, 20) #Stop at 90%.
 
     if isnothing(idx_stop)
         idx_stop = length(sim_concs)
@@ -145,8 +132,7 @@ function transient_equation(N, dx, D)
     println("Simulation complete. Plotting final concentration...") #for testing.(thankyou copilot)
     final_u = sol[end]
     final_C = reshape(final_u, N, N) # Reshape to 2D grid
-    # final_C_norm = (final_C .- minimum(final_C)) ./ (maximum(final_C) - minimum(final_C)) # Normalize to [0, 1]
-    final_C_norm = (final_C .- C_right) ./ (C_left - C_right)
+    final_C_norm = (final_C .- C_right) ./ (C_left - C_right) #Normalize 
     reversed_rainbow = reverse(ColorSchemes.rainbow.colors)
 
     p = heatmap(final_C_norm',
@@ -165,10 +151,10 @@ end
 function analytical_concentration(t, D_eff, x; terms=100)
     sum = 0.0
     for n in 1:terms
-        sum = sum + (C_left/n)*sin(n*pi*x/L)*exp(-n^2 * π^2 * D_eff * t / L^2)
+        sum = sum + (C_left / n) * sin(n * pi * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
     end
 
-    return (C_left - (C_left * (x / L)) - (2 / pi) * sum)  
+    return (C_left - (C_left * (x / L)) - (2 / pi) * sum)
 end
 
 # Wrapper for curve fitting
@@ -182,7 +168,7 @@ end
 
 function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     # Select virtual pore positions along the x-axis (normalized locations)
-    x_positions = [0.25 * L, 0.5 * L, 0.75 * L]
+    x_positions = [0.25 * L, 0.5 * L, 0.75 * L] #NOTE: change this if you want to 
     col_indices = [Int(round(x / dx)) for x in x_positions]
 
     colors = [:cyan, :green, :blue]              # Different colors for each pore
@@ -195,7 +181,7 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
 
     for (i, col) in enumerate(col_indices)
         col_idxs = [(j - 1) * N + col for j in 1:N]  # all rows at column col
-        sim_concs = [mean(u[col_idxs]) for u in sol.u]
+        sim_concs = [mean(u[col_idxs]) for u in sol.u] #again, not sure if this is needed. Avg concentration for column at each X
 
         # Normalize
         sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
@@ -212,6 +198,12 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
         p0 = [1e-5]
         model(t, p) = [analytical_concentration(ti, p[1], col * dx) for ti in t]
         fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
+
+        #NOTE: Apparently, curve_fit and other lsqfit methods in general are really bad.
+        # The logistic decay instead of growth (expected (?)) is almsot certainly due to 
+        # fitting methods / numerical overshooting 
+
+
         println("x = ", labels[i], ", Recovered D_eff ≈ ", fit.param[1])
 
         # Plot simulation + fit on the same figure
@@ -285,4 +277,3 @@ extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
 
 
 
-    
