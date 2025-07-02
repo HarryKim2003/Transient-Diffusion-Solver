@@ -6,6 +6,7 @@
 
 #!!!! IMPORTANT !!!!
 # This program uses Threads, so please allow your program to use more threads.
+# (Thank you ece 252)
 
 # I developed on Windows. To do so, open up cmd, "set JULIA_NUM_THREADS=4", and restart Julia. 
 # Alternatively, in VScode, open up the Command Pallette (command/ctrl + shift + p),
@@ -34,12 +35,11 @@ using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit
 #maybe use seomething else? 
 
 using Base.Threads #systems and concurrency ECE 252 instant usage here we go 
-
-
 using KrylovKit
 
 println("hello world")
 
+##### GLOBAL VARIABLES ##### 
 
 #Part 1: Building the bulk; open air experiment 
 gr();
@@ -50,23 +50,68 @@ L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
 
-#For part 2 
-# pore_diam = spacing * 0.75
-# throat_diam = pore_diam * 0.5
-# throat_len = spacing - pore_diam / 2 - pore_diam / 2
-# A_throat = π * (throat_diam / 2)^2
-# g = D * A_throat / throat_len  # [m³/s]
+#Time settings 
+tspan = (0.0, 5.0) #simuates 0 to 5 second
+save_times = range(tspan[1], tspan[2], length=300)
+
 
 #BOUNDARY CONDITIONS: NOTE: CHANGE THESE FOR DIFFERENT BOUNDARY CONDITIONS!!
 #For now, the code is set to have a left boundary condition of 1.0 and a right boundary condition of 0.0
 #Might want to optimize for differnet options in the future.
-
 C_left = 1.0
 C_right = 0.0
 
-#Time settings 
-tspan = (0.0, 5.0) #simuates 0 to 5 second
-save_times = range(tspan[1], tspan[2], length=300)
+##### GLOBAL VARIABLES END ##### 
+
+
+##### "HELPER" FUNCTIONS SECTIONS #####
+function make_analytical_model(x; terms=100)
+    return (t, p) -> begin
+        D_eff = p[1]
+        @inbounds [analytical_concentration(ti, D_eff, x; terms=terms) for ti in t]
+    end
+end
+
+function fit_Deff(sim_times::AbstractVector, sim_concs::AbstractVector, x::Float64;
+    p0=[1e-5], clip_low=0.05, clip_high=0.9, terms=100)
+    # Normalize
+    sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
+    maxC = maximum(sim_concs)
+
+    # Clip time range
+    idx_start = findfirst(c -> c > clip_low * maxC, sim_concs)
+    idx_stop = findfirst(c -> c > clip_high * maxC, sim_concs)
+    idx_start = isnothing(idx_start) ? 1 : idx_start
+    idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
+
+    # Model
+    model = (t, p) -> [analytical_concentration(ti, p[1], x; terms=terms) for ti in t]
+
+    # Fit
+    fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
+    return fit.param[1]  # Return D_eff
+end
+
+
+function analytical_concentration(t, D_eff, x; terms=100)
+    sum = 0.0
+    for n in 1:terms
+        sum = sum + (C_left / n) * sin(n * pi * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
+    end
+
+    return (C_left - (C_left * (x / L)) - (2 / pi) * sum)
+end
+
+# Wrapper for curve fitting
+function model_wrapper(p, tvec)
+    D_eff = p[1]
+    x = 0.5 * L
+    return [analytical_concentration(t, D_eff, x) for t in tvec]
+end
+
+##### "HELPER" FUNCTION SECTION END #####
+
+
 
 # Matrix builder function for the 2D transient diffusion equation.
 function build_diffusion_matrix(N, dx, D)
@@ -163,28 +208,12 @@ function transient_equation(N, dx, D)
     display(p)
     gui()
 
-    fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
+    fit_multiple_virtual_pores(sol, N, dx, L, sim_times, C_left, C_right)
     return sol, sim_times
 end
 
-function analytical_concentration(t, D_eff, x; terms=100)
-    sum = 0.0
-    for n in 1:terms
-        sum = sum + (C_left / n) * sin(n * pi * x / L) * exp(-n^2 * π^2 * D_eff * t / L^2)
-    end
-
-    return (C_left - (C_left * (x / L)) - (2 / pi) * sum)
-end
-
-# Wrapper for curve fitting
-function model_wrapper(p, tvec)
-    D_eff = p[1]
-    x = 0.5 * L
-    return [analytical_concentration(t, D_eff, x) for t in tvec]
-end
-
-
-function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
+#Fits pores to model -> Returns fitted D_Eff (Guesses Deffs, see which one fits closest to C) 
+function fit_multiple_virtual_pores(sol, N, dx, L, sim_times, C_left, C_right)
     println("🔁 Fitting virtual pores using $(nthreads()) threads...")
 
     # Select virtual pore positions (you can change these)
@@ -247,34 +276,9 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     display(p)
 end
 
-function make_analytical_model(x; terms=100)
-    return (t, p) -> begin
-        D_eff = p[1]
-        @inbounds [analytical_concentration(ti, D_eff, x; terms=terms) for ti in t]
-    end
-end
 
-function fit_Deff(sim_times::AbstractVector, sim_concs::AbstractVector, x::Float64;
-    p0=[1e-5], clip_low=0.05, clip_high=0.9, terms=100)
-    # Normalize
-    sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
-    maxC = maximum(sim_concs)
-
-    # Clip time range
-    idx_start = findfirst(c -> c > clip_low * maxC, sim_concs)
-    idx_stop = findfirst(c -> c > clip_high * maxC, sim_concs)
-    idx_start = isnothing(idx_start) ? 1 : idx_start
-    idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
-
-    # Model
-    model = (t, p) -> [analytical_concentration(ti, p[1], x; terms=terms) for ti in t]
-
-    # Fit
-    fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
-    return fit.param[1]  # Return D_eff
-end
-
-
+# Fits C at every (i,i), returning one Deff. 
+# Steady state should be VERY close to true D. 
 function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     println("📊 Fitting all virtual pores using $(nthreads()) threads...")
 
@@ -292,7 +296,7 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
             sim_concs = vec(U[i, j, :])
 
             try
-                D_fit = fit_Deff(sim_times, sim_concs, i * dx)
+                D_fit = fit_Deff(sim_times, sim_concs, i * dx) #Still o(n^3)... 
                 d_eff_array[idx_global] = D_fit
             catch
                 d_eff_array[idx_global] = missing
