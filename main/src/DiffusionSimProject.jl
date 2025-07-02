@@ -4,9 +4,22 @@
 # For Professor Jeff Gostick 
 
 
+#!!!! IMPORTANT !!!!
+# This program uses Threads, so please allow your program to use more threads.
+
+# I developed on Windows. To do so, open up cmd, "set JULIA_NUM_THREADS=4", and restart Julia. 
+# Alternatively, in VScode, open up the Command Pallette (command/ctrl + shift + p),
+# Open up "Preferences: Open Settings (UI), search julia numThreads, change the value as desired. 
+
+# Currently, I'm using 12 threads on my Desktop, and 4 on my Laptop. 
+# There must be better ways to make this faster... 
+
 # Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material.
 # Step 2: Make sure sparse arrays are being used 
-# Step 3: STart using GPU 
+# Step 3: Start using GPU 
+
+
+# Step 4: Make extract_and_plot_Deff_map NOT o(n^3) time... 
 
 using OrdinaryDiffEq
 using BenchmarkTools
@@ -20,6 +33,8 @@ using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit
 # https://www.reddit.com/r/Julia/comments/19e1qp3/goodness_of_fit_parameters_using_lsqfitjl/
 #maybe use seomething else? 
 
+using Base.Threads #systems and concurrency ECE 252 instant usage here we go 
+
 
 using KrylovKit
 
@@ -30,7 +45,7 @@ println("hello world")
 gr();
 
 #Grid Settings
-N = 100; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
+N = 40; #Number of grid points in x + y direction. #increased from 40 for accuracy... 
 L = 0.01 # domain length in meters (1cm)
 dx = L / N # grid spacing in meters
 D = 2.09488e-5 #Bulk diffusivity of oxygen in air (m^2/s)
@@ -169,54 +184,62 @@ function model_wrapper(p, tvec)
 end
 
 
-
 function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
-    # Select virtual pore positions along the x-axis (normalized locations)
-    x_positions = [0.25 * L, 0.5 * L, 0.75 * L] #NOTE: change this if you want to 
+    println("🔁 Fitting virtual pores using $(nthreads()) threads...")
+
+    # Select virtual pore positions (you can change these)
+    x_positions = [0.25 * L, 0.5 * L, 0.75 * L]
     col_indices = [Int(round(x / dx)) for x in x_positions]
 
-    colors = [:cyan, :green, :blue]              # Different colors for each pore
-    markers = [:star, :utriangle, :cross]        # Different marker styles
-    labels = ["0.25L", "0.5L", "0.75L"]           # Human-readable labels
+    # Precompute solution tensor
+    U_mat = hcat(sol.u...)
+    U = reshape(U_mat, N, N, :)  # U[i, j, t]
 
-    # Create a single figure to plot all curves
+    # Visual stuff
+    colors = [:cyan, :green, :blue]
+    markers = [:star, :utriangle, :cross]
+    labels = ["0.25L", "0.5L", "0.75L"]
+
+    # Output storage (thread-safe)
+    D_eff_results = Vector{Union{Float64,Missing}}(undef, length(col_indices))
+    D_eff_results .= missing
+
     p = plot(title="Transient Diffusion Fit at Virtual Pores",
         xlabel="Time [s]", ylabel="Concentration")
 
-    for (i, col) in enumerate(col_indices)
-        col_idxs = [(j - 1) * N + col for j in 1:N]  # all rows at column col
-        sim_concs = [mean(u[col_idxs]) for u in sol.u] #again, not sure if this is needed. Avg concentration for column at each X
+    Threads.@threads for thread_i in 1:length(col_indices)
+        col = col_indices[thread_i]
+        try
+            col_idxs = [(j - 1) * N + col for j in 1:N]  # all rows at column col
+            sim_concs = [mean(u[col_idxs]) for u in sol.u]
+            D_fit = fit_Deff(sim_times, sim_concs, col * dx)
+            D_eff_results[thread_i] = D_fit
 
-        # Normalize
+            # For visualizing (not thread-safe — defer plotting)
+        catch e
+            @warn "Fitting failed at col = $col" exception = (e, catch_backtrace())
+            D_eff_results[thread_i] = missing
+        end
+    end
+
+    # === Plotting happens AFTER threading ===
+    for (i, col) in enumerate(col_indices)
+        col_idxs = [(j - 1) * N + col for j in 1:N]
+        sim_concs = [mean(u[col_idxs]) for u in sol.u]
         sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
 
+        D_fit = D_eff_results[i]
+        if D_fit === missing
+            continue
+        end
 
-        # Clip to 90% rise
-        maxC = maximum(sim_concs)
-        idx_start = findfirst(x -> x > 0.05 * maxC, sim_concs)
-        idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
-        idx_start = isnothing(idx_start) ? 1 : idx_start
-        idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
+        println("x = ", labels[i], ", Recovered D_eff ≈ ", D_fit)
 
-        # Fit analytical model to simulation data at this pore
-        p0 = [1e-5]
-        model(t, p) = [analytical_concentration(ti, p[1], col * dx) for ti in t]
-        fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
-
-        #NOTE: Apparently, curve_fit and other lsqfit methods in general are really bad.
-        # The logistic decay instead of growth (expected (?)) is almsot certainly due to 
-        # fitting methods / numerical overshooting 
-
-        #Possible problem: Fitting is using 40 terms, conc is using 39 
-
-
-        println("x = ", labels[i], ", Recovered D_eff ≈ ", fit.param[1])
-
-        # Plot simulation + fit on the same figure
+        model = make_analytical_model(col * dx)
         plot!(p, sim_times, sim_concs,
             label="x = $(labels[i]) concentration", lw=2,
             marker=markers[i], color=colors[i])
-        plot!(p, sim_times, model(sim_times, fit.param),
+        plot!(p, sim_times, model(sim_times, [D_fit]),
             label="x = $(labels[i]) fitted plot", lw=2,
             linestyle=:dash, color=colors[i])
     end
@@ -224,62 +247,87 @@ function fit_multiple_virtual_pores(sol, N, dx, L, sim_times)
     display(p)
 end
 
+function make_analytical_model(x; terms=100)
+    return (t, p) -> begin
+        D_eff = p[1]
+        @inbounds [analytical_concentration(ti, D_eff, x; terms=terms) for ti in t]
+    end
+end
+
+function fit_Deff(sim_times::AbstractVector, sim_concs::AbstractVector, x::Float64;
+    p0=[1e-5], clip_low=0.05, clip_high=0.9, terms=100)
+    # Normalize
+    sim_concs = (sim_concs .- C_right) ./ (C_left - C_right)
+    maxC = maximum(sim_concs)
+
+    # Clip time range
+    idx_start = findfirst(c -> c > clip_low * maxC, sim_concs)
+    idx_stop = findfirst(c -> c > clip_high * maxC, sim_concs)
+    idx_start = isnothing(idx_start) ? 1 : idx_start
+    idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
+
+    # Model
+    model = (t, p) -> [analytical_concentration(ti, p[1], x; terms=terms) for ti in t]
+
+    # Fit
+    fit = curve_fit(model, sim_times[idx_start:idx_stop], sim_concs[idx_start:idx_stop], p0)
+    return fit.param[1]  # Return D_eff
+end
+
+
 function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
-    println("📊 Fitting all virtual pores...")
+    println("📊 Fitting all virtual pores using $(nthreads()) threads...")
 
-    d_eff_array = Float64[]
-    d_eff_profile = Float64[]
-    x_arr = Float64[]
-    d_eff_buffer = Float64[]
-    pore_ctr = 0
+    # Precompute solution tensor
+    U_mat = hcat(sol.u...)           # Stack all solution vectors (N^2 × time)
+    U = reshape(U_mat, N, N, :)      # (i, j, t)
 
+    # Thread-safe preallocated output
+    d_eff_array = Vector{Union{Float64,Missing}}(undef, (N - 2) * N)
+    d_eff_array .= missing
 
-    for i in 2:N-1  # x-direction (skip boundaries)
-        for j in 1:N  # y-direction (all rows)
-            idx = (j - 1) * N + i
-            sim_concs = [u[idx] for u in sol.u]
-
-            # Fit only until 90% rise
-            maxC = maximum(sim_concs)
-            idx_stop = findfirst(x -> x > 0.9 * maxC, sim_concs)
-            idx_stop = isnothing(idx_stop) ? length(sim_concs) : idx_stop
-
-            p0 = [1e-5]
-            model(t, p) = [analytical_concentration(ti, p[1], i * dx) for ti in t]
+    Threads.@threads for i in 2:N-1
+        for j in 1:N
+            idx_global = (i - 2) * N + j
+            sim_concs = vec(U[i, j, :])
 
             try
-                fit = curve_fit(model, sim_times[1:idx_stop], sim_concs[1:idx_stop], p0)
-                D_fit = fit.param[1]
-                push!(d_eff_array, D_fit)
-                push!(d_eff_buffer, D_fit)
+                D_fit = fit_Deff(sim_times, sim_concs, i * dx)
+                d_eff_array[idx_global] = D_fit
             catch
-                push!(d_eff_array, NaN)
-                push!(d_eff_buffer, NaN)
-            end
-
-            pore_ctr += 1
-            if pore_ctr % N == 9
-                push!(d_eff_profile, mean(skipmissing(d_eff_buffer)))
-                push!(x_arr, i * dx)
-                empty!(d_eff_buffer)
+                d_eff_array[idx_global] = missing
             end
         end
     end
 
+    # === Sequential post-processing ===
 
-    # D_eff Profile vs X
+    d_eff_profile = Float64[]
+    x_arr = Float64[]
+
+    for i in 2:N-1
+        start_idx = (i - 2) * N + 1
+        stop_idx = start_idx + N - 1
+        col_vals = d_eff_array[start_idx:stop_idx]
+        mean_D = mean(skipmissing(col_vals))
+        push!(d_eff_profile, mean_D)
+        push!(x_arr, i * dx)
+    end
+
+    # Plot: D_eff Profile vs X
     plot(x_arr, d_eff_profile,
         seriestype=:scatter, label="Mean D_eff per column",
         xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
-    # Histogram
-    # d_vals = filter(!isnan, d_eff_array)
-    # histogram(d_vals, bins=100, title="D_eff Distribution",
-    #     xlabel="D_eff", ylabel="Count", label="", legend=false, xlims=(2.0e-5, 3.0e-5))
+
+    # Optional: Histogram
+    # histogram(skipmissing(d_eff_array), bins=100,
+    #     title="D_eff Distribution", xlabel="D_eff", ylabel="Count", legend=false)
 end
 
 # transient_equation(N, dx, D);
 sol, sim_times = transient_equation(N, dx, D);
 extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
+
 
 
 
