@@ -15,8 +15,10 @@
 # Currently, I'm using 12 threads on my Desktop, and 4 on my Laptop. 
 # There must be better ways to make this faster... 
 
-# Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material.
-# Step 2: Make sure sparse arrays are being used 
+# Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material. (Working, D_eff profile graph is a little sus...)
+# Step 2: Make sure sparse arrays are being used (Good!)
+
+
 # Step 3: Start using GPU 
 
 
@@ -177,6 +179,7 @@ function transient_equation(N, dx, D; mask=ones(N, N))
 
     prob = ODEProblem(f!, u0, tspan)
     sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sim_times = sol.t
 
     # Visualization
     println("Simulation complete. Plotting final concentration...") #for testing.(thankyou copilot)
