@@ -24,6 +24,10 @@
 
 # Step 4: Make extract_and_plot_Deff_map NOT o(n^3) time... 
 
+#To do for Thurs:
+# Fix Masked concentration 0 being more attractive logic
+# Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
+
 using OrdinaryDiffEq
 using BenchmarkTools
 using DifferentialEquations
