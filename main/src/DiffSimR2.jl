@@ -18,15 +18,23 @@
 # Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material. (Working, D_eff profile graph is a little sus...)
 # Step 2: Make sure sparse arrays are being used (Good!)
 
-
 # Step 3: Start using GPU 
-
-
 # Step 4: Make extract_and_plot_Deff_map NOT o(n^3) time... 
 
 #To do for Thurs:
 # Fix Masked concentration 0 being more attractive logic
 # Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
+
+# Concentration map (img 1) for soem time steps <-- 
+
+
+# Run tortuaosity.jl on images to see true value of Tau 
+# Compare that with Deff = Dab (porosity / tortusoity) 
+# Porosity: total number of cells / void cells ? 
+# Dab is open air diffusivity 
+
+# Find Tortuosity <-- Seperate the code so it looks more like Tortuosity.jl 
+# Fit the analytical solution to the colormap at the second last step in Github 
 
 using OrdinaryDiffEq
 using BenchmarkTools
@@ -37,7 +45,7 @@ using Plots
 using ColorSchemes
 using Statistics
 using Random
-using KrylovKit
+using KrylovKitS
 using Base.Threads #systems and concurrency ECE 252 instant usage here we go 
 
 using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit 
@@ -183,6 +191,8 @@ function transient_equation(N, dx, D; mask=ones(N, N))
 
     prob = ODEProblem(f!, u0, tspan)
     sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    println(sol);
+
     sim_times = sol.t
 
     # Visualization
@@ -317,7 +327,7 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
     # Plot: D_eff Profile vs X
     plot(x_arr, d_eff_profile,
         seriestype=:scatter, label="Mean D_eff per column",
-        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
+        xlabel="x [m]", ylabel="D_eff", ylims=(0, 5.0e-5), title="D_eff Profile vs X")
 
     # Optional: Histogram
     # histogram(skipmissing(d_eff_array), bins=100,
