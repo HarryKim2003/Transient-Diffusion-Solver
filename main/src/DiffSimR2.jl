@@ -42,7 +42,7 @@
 
 
 #To do for Thurs:
-# Fix Masked concentration 0 being more attractive logic
+# Fix Masked concentration 0 being moTre attractive logic
 # Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
 # Concentration map (img 1) for soem time steps <-- 
 
@@ -86,8 +86,8 @@ C_left = 1.0
 C_right = 0.0
 
 
-sphere_radius = 3
-num_spheres = 5
+sphere_radius = 0
+num_spheres = 0
 
 ##### GLOBAL VARIABLES END ##### 
 
@@ -298,42 +298,51 @@ end
 
 # Fits C at every (i,i), returning one Deff. 
 # Steady state should be VERY close to true D. 
-function solve_Deff(sol, N, dx, L, sim_times)
+function solve_Deff(sol, N, dx, L, sim_times, mask)
     println("Fitting all virtual pores using $(nthreads()) threads...")
 
+    # Use a 2D array for intuitive (i, j) indexing. Initialize with 'missing'.
+    d_eff_map = Matrix{Union{Float64,Missing}}(missing, N, N)
+
     # Precompute solution tensor
-    U_mat = hcat(sol.u...)           # Stack all solution vectors (N^2 × time)
-    U = reshape(U_mat, N, N, :)      # (i, j, t)
+    U_mat = hcat(sol.u...)
+    U = reshape(U_mat, N, N, :) # U is now accessible as U[i, j, time_idx]
 
-    # Thread-safe preallocated output
-    d_eff_array = Vector{Union{Float64,Missing}}(undef, (N - 2) * N)
-    d_eff_array .= missing
+    Threads.@threads for j in 1:N
+        for i in 2:N-1 # Exclude boundaries
+            # If the cell is solid (masked), skip it.
+            if mask[i, j] == 0.0
+                continue
+            end
 
-    Threads.@threads for i in 2:N-1
-        for j in 1:N
-            idx_global = (i - 2) * N + j
+            # Extract concentration time-series for the current point (i,j)
             sim_concs = vec(U[i, j, :])
 
+            # Skip fitting if concentration is always zero (avoids errors)
+            if all(==(0.0), sim_concs)
+                continue
+            end
+
             try
-                D_fit = fit_Deff(sim_times, sim_concs, i * dx) #Still o(n^3)... 
-                d_eff_array[idx_global] = D_fit
+                D_fit = fit_Deff(sim_times, sim_concs, i * dx)
+                d_eff_map[i, j] = D_fit
             catch
-                d_eff_array[idx_global] = missing
+                # The fit might still fail for edge cases, so we keep the try-catch
+                d_eff_map[i, j] = missing
             end
         end
     end
 
-    # === Sequential post-processing ===
-
+    # === Post-processing ===
+    # Calculate the mean D_eff for each column, skipping missing values.
     d_eff_profile = Float64[]
     x_arr = Float64[]
 
     for i in 2:N-1
-        start_idx = (i - 2) * N + 1
-        stop_idx = start_idx + N - 1
-        col_vals = d_eff_array[start_idx:stop_idx]
+        # Get all D_eff values in the current column
+        col_vals = d_eff_map[i, :]
 
-        # Ensure the column has valid data before calculating mean
+        # Check if there's any valid data in the column to average
         if any(!ismissing, col_vals)
             mean_D = mean(skipmissing(col_vals))
             push!(d_eff_profile, mean_D)
@@ -344,15 +353,11 @@ function solve_Deff(sol, N, dx, L, sim_times)
     # Plot: D_eff Profile vs X
     p = plot(x_arr, d_eff_profile,
         seriestype=:scatter, label="Mean D_eff per column",
-        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
-
+        xlabel="x [m]", ylabel="D_eff", title="D_eff Profile vs X")
     display(p)
-    println("Deff is", d_eff_profile)
-    return d_eff_profile
 
-    # Optional: Histogram ...Slightly buggy 
-    # histogram(skipmissing(d_eff_array), bins=100,
-    #     title="D_eff Distribution", xlabel="D_eff", ylabel="Count", legend=false)
+    println("Deff profile is ", d_eff_profile)
+    return d_eff_profile
 end
 
 
@@ -360,8 +365,8 @@ function calculate_porosity(mask)
     total_cells = length(mask)
     void_cells = total_cells - sum(mask)
     porosity = void_cells / total_cells
-    println("total cells", total_cells)
-    println("void cells", void_cells)
+    println("total cells ", total_cells)
+    println("void cells ", void_cells)
     println("Calculated Porosity: ", porosity)
     return porosity
 end
@@ -375,13 +380,10 @@ end
 # transient_equation(N, dx, D);
 mask = generate_mask(N);
 sol, sim_times = transient_equation(N, dx, D; mask=mask)
-D_Eff_array = solve_Deff(sol, N, dx, L, sim_times)
+D_Eff_array = solve_Deff(sol, N, dx, L, sim_times, mask)
 D_Eff = D_Eff_array[end]
 
 c_porosity = calculate_porosity(mask)
 c_tortusity = calculate_tortuosity(c_porosity, D_Eff)
-
-
-
 
 
