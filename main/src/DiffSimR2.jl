@@ -24,13 +24,6 @@
 
 
 # TO DO LIST # 
-
-
-# Run tortuaosity.jl on images to see true value of Tau 
-# Compare that with Deff = Dab (porosity / tortusoity) 
-# Porosity: total number of cells / void cells ? 
-# Dab is open air diffusivity 
-
 # Find Tortuosity <-- Seperate the code so it looks more like Tortuosity.jl 
 # Fit the analytical solution to the colormap at the second last step in Github 
 
@@ -38,7 +31,6 @@
 
 
 # - Start using GPU 
-# - Make extract_and_plot_Deff_map NOT o(n^3) time... 
 
 
 #To do for Thurs:
@@ -62,7 +54,8 @@ using Base.Threads #systems and concurrency ECE 252 instant usage here we go
 using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit 
 # https://www.reddit.com/r/Julia/comments/19e1qp3/goodness_of_fit_parameters_using_lsqfitjl/
 #maybe use seomething else? 
-
+using Tortuosity
+using Tortuosity: tortuosity, vec_to_grid
 
 println("hello world")
 
@@ -86,7 +79,7 @@ C_left = 1.0
 C_right = 0.0
 
 
-sphere_radius = 0
+sphere_radius = 3
 num_spheres = 0
 
 ##### GLOBAL VARIABLES END ##### 
@@ -363,7 +356,8 @@ end
 
 function calculate_porosity(mask)
     total_cells = length(mask)
-    void_cells = total_cells - sum(mask)
+    # void_cells = total_cells - sum(mask)
+    void_cells = sum(mask)
     porosity = void_cells / total_cells
     println("total cells ", total_cells)
     println("void cells ", void_cells)
@@ -372,8 +366,20 @@ function calculate_porosity(mask)
 end
 
 function calculate_tortuosity(porosity, D_Eff)
-    tortuosity = porosity * D / D_Eff
-    return tortuosity
+    tort = porosity * D / D_Eff
+    println("Calculated Tortuosity: ", tort)
+    return tort
+end
+
+function compute_tortuosity(mask, sol)
+    println("Calculating tortuosity directly from steady-state concentration field ")
+    steady_state = reshape(sol.u[end], N, N)
+    steady_state[mask.==0.0] .= NaN
+    τ = tortuosity(steady_state; axis=:x)
+
+    println("Tortuosity from tortuosity.jl is ~ ", τ)
+    println("Note, inaccuracies due to fitted Deff")
+
 end
 
 
@@ -385,5 +391,4 @@ D_Eff = D_Eff_array[end]
 
 c_porosity = calculate_porosity(mask)
 c_tortusity = calculate_tortuosity(c_porosity, D_Eff)
-
-
+tort = compute_tortuosity(mask, sol)
