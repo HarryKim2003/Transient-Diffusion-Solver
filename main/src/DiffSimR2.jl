@@ -15,17 +15,15 @@
 # Currently, I'm using 12 threads on my Desktop, and 4 on my Laptop. 
 # There must be better ways to make this faster... 
 
-# Step 1: Add spheres then masks as "dead areas" in order to simulate the porous material. (Working, D_eff profile graph is a little sus...)
-# Step 2: Make sure sparse arrays are being used (Good!)
 
-# Step 3: Start using GPU 
-# Step 4: Make extract_and_plot_Deff_map NOT o(n^3) time... 
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
 
-#To do for Thurs:
-# Fix Masked concentration 0 being more attractive logic
-# Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
 
-# Concentration map (img 1) for soem time steps <-- 
+
+# TO DO LIST # 
 
 
 # Run tortuaosity.jl on images to see true value of Tau 
@@ -36,6 +34,19 @@
 # Find Tortuosity <-- Seperate the code so it looks more like Tortuosity.jl 
 # Fit the analytical solution to the colormap at the second last step in Github 
 
+# Turn Global Variables into input using a simple GUI?
+
+
+# - Start using GPU 
+# - Make extract_and_plot_Deff_map NOT o(n^3) time... 
+
+
+#To do for Thurs:
+# Fix Masked concentration 0 being more attractive logic
+# Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
+# Concentration map (img 1) for soem time steps <-- 
+
+
 using OrdinaryDiffEq
 using BenchmarkTools
 using DifferentialEquations
@@ -45,7 +56,7 @@ using Plots
 using ColorSchemes
 using Statistics
 using Random
-using KrylovKitS
+using KrylovKit
 using Base.Threads #systems and concurrency ECE 252 instant usage here we go 
 
 using LsqFit #found out on sunday evenign: LsqFit is bad according to reddit 
@@ -73,6 +84,10 @@ save_times = range(tspan[1], tspan[2], length=300)
 # Boundary conditions. DO NOT CHANGE THESE FOR NOW, CODE WILL BREAK 
 C_left = 1.0
 C_right = 0.0
+
+
+sphere_radius = 3
+num_spheres = 5
 
 ##### GLOBAL VARIABLES END ##### 
 
@@ -122,7 +137,7 @@ function model_wrapper(p, tvec)
     return [analytical_concentration(t, D_eff, x) for t in tvec]
 end
 
-function generate_mask(N; sphere_radius=5, num_spheres=10)
+function generate_mask(N)
     mask = ones(Float64, N, N)
     rng = MersenneTwister(1234)  # for reproducibility
     for _ in 1:num_spheres
@@ -191,8 +206,6 @@ function transient_equation(N, dx, D; mask=ones(N, N))
 
     prob = ODEProblem(f!, u0, tspan)
     sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
-    println(sol);
-
     sim_times = sol.t
 
     # Visualization
@@ -220,7 +233,7 @@ end
 #Fits pores to model -> Returns fitted D_Eff (Guesses Deffs, see which one fits closest to C) 
 function fit_multiple_virtual_pores(sol, N, dx, L, sim_times, C_left, C_right)
 
-    println("🔁 Fitting virtual pores using $(nthreads()) threads...")
+    println("Fitting virtual pores using $(nthreads()) threads...")
 
     # Select virtual pore positions (you can change these)
     x_positions = [0.25 * L, 0.5 * L, 0.75 * L]
@@ -285,8 +298,8 @@ end
 
 # Fits C at every (i,i), returning one Deff. 
 # Steady state should be VERY close to true D. 
-function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
-    println("📊 Fitting all virtual pores using $(nthreads()) threads...")
+function solve_Deff(sol, N, dx, L, sim_times)
+    println("Fitting all virtual pores using $(nthreads()) threads...")
 
     # Precompute solution tensor
     U_mat = hcat(sol.u...)           # Stack all solution vectors (N^2 × time)
@@ -319,22 +332,56 @@ function extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
         start_idx = (i - 2) * N + 1
         stop_idx = start_idx + N - 1
         col_vals = d_eff_array[start_idx:stop_idx]
-        mean_D = mean(skipmissing(col_vals))
-        push!(d_eff_profile, mean_D)
-        push!(x_arr, i * dx)
+
+        # Ensure the column has valid data before calculating mean
+        if any(!ismissing, col_vals)
+            mean_D = mean(skipmissing(col_vals))
+            push!(d_eff_profile, mean_D)
+            push!(x_arr, i * dx)
+        end
     end
 
     # Plot: D_eff Profile vs X
-    plot(x_arr, d_eff_profile,
+    p = plot(x_arr, d_eff_profile,
         seriestype=:scatter, label="Mean D_eff per column",
-        xlabel="x [m]", ylabel="D_eff", ylims=(0, 5.0e-5), title="D_eff Profile vs X")
+        xlabel="x [m]", ylabel="D_eff", ylims=(2.0e-5, 3.0e-5), title="D_eff Profile vs X")
 
-    # Optional: Histogram
+    display(p)
+    println("Deff is", d_eff_profile)
+    return d_eff_profile
+
+    # Optional: Histogram ...Slightly buggy 
     # histogram(skipmissing(d_eff_array), bins=100,
     #     title="D_eff Distribution", xlabel="D_eff", ylabel="Count", legend=false)
 end
 
+
+function calculate_porosity(mask)
+    total_cells = length(mask)
+    void_cells = total_cells - sum(mask)
+    porosity = void_cells / total_cells
+    println("total cells", total_cells)
+    println("void cells", void_cells)
+    println("Calculated Porosity: ", porosity)
+    return porosity
+end
+
+function calculate_tortuosity(porosity, D_Eff)
+    tortuosity = porosity * D / D_Eff
+    return tortuosity
+end
+
+
 # transient_equation(N, dx, D);
-mask = generate_mask(N, sphere_radius=3, num_spheres=5)
+mask = generate_mask(N);
 sol, sim_times = transient_equation(N, dx, D; mask=mask)
-extract_and_plot_Deff_map(sol, N, dx, L, sim_times)
+D_Eff_array = solve_Deff(sol, N, dx, L, sim_times)
+D_Eff = D_Eff_array[end]
+
+c_porosity = calculate_porosity(mask)
+c_tortusity = calculate_tortuosity(c_porosity, D_Eff)
+
+
+
+
+
