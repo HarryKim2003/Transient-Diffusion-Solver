@@ -55,6 +55,7 @@ using KrylovKit
 using Base.Threads
 using LsqFit
 using Tortuosity
+using Tortuosity: tortuosity, vec_to_grid
 
 try
     using CUDA
@@ -139,3 +140,5 @@ end
 
 # --- Run the script ---
 main()
+
+
