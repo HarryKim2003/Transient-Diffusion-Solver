@@ -80,7 +80,7 @@ C_right = 0.0
 
 
 sphere_radius = 3
-num_spheres = 0
+num_sphere = 5
 
 ##### GLOBAL VARIABLES END ##### 
 
@@ -133,7 +133,7 @@ end
 function generate_mask(N)
     mask = ones(Float64, N, N)
     rng = MersenneTwister(1234)  # for reproducibility
-    for _ in 1:num_spheres
+    for _ in 1:num_sphere
         x_c = rand(rng, sphere_radius+1:N-sphere_radius)
         y_c = rand(rng, sphere_radius+1:N-sphere_radius)
         for i in 1:N, j in 1:N
@@ -392,3 +392,4 @@ D_Eff = D_Eff_array[end]
 c_porosity = calculate_porosity(mask)
 c_tortusity = calculate_tortuosity(c_porosity, D_Eff)
 tort = compute_tortuosity(mask, sol)
+
