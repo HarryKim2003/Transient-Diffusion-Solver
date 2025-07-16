@@ -81,7 +81,7 @@ include("analysis.jl")
 println("hello world")
 
 # --- Global Configuration ---
-const BACKEND = :cpu  # Options: :nvidia, :amd, :cpu
+const backend_choice = :cpu  # Options: :nvidia, :amd, :cpu
 const N = 40
 const L = 0.01
 const dx = L / N
@@ -103,7 +103,7 @@ function main()
     local sol, sim_times
 
     # 3. Run the simulation using the selected backend
-    if BACKEND === :nvidia
+    if backend_choice === :nvidia
         if !isdefined(Main, :CUDA) || !CUDA.functional()
             @error "NVIDIA backend selected, but CUDA is not functional. Falling back to CPU."
             sol, sim_times = transient_equation_cpu(N, dx, D; mask=mask_cpu)
@@ -111,7 +111,7 @@ function main()
             mask_gpu = CuArray(mask_cpu)
             sol, sim_times = transient_equation_nvidia(N, dx, D; mask_gpu=mask_gpu)
         end
-    elseif BACKEND === :amd
+    elseif backend_choice === :amd
         if !isdefined(Main, :AMDGPU) || !AMDGPU.functional()
             @error "AMD backend selected, but AMDGPU is not functional. Falling back to CPU."
             sol, sim_times = transient_equation_cpu(N, dx, D; mask=mask_cpu)

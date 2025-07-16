@@ -24,7 +24,7 @@
 
 
 # TO DO LIST # 
-# Find Tortuosity <-- Seperate the code so it looks more like Tortuosity.jl 
+# Find Tortuosity <-- Separate the code so it looks more like Tortuosity.jl 
 # Fit the analytical solution to the colormap at the second last step in Github 
 
 # Turn Global Variables into input using a simple GUI?

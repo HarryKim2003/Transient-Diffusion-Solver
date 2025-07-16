@@ -27,7 +27,7 @@ function visualize_final_concentration(sol, C_left, C_right)
     final_C_cpu = reshape(Array(sol.u[end]), N, N) # Copy to CPU
     final_C_norm = (final_C_cpu .- C_right) ./ (C_left - C_right)
     p = heatmap(final_C_norm',
-        title="Final Concentration ($(BACKEND) backend)",
+        title="Final Concentration ($(backend_choice) backend)",
         yflip=true, colorbar=true, c=reverse(ColorSchemes.rainbow.colors))
     display(p)
 end

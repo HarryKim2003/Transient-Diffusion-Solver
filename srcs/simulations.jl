@@ -42,7 +42,7 @@ function build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
         end
     end
     A_gpu = CuSparseMatrixCSR(sparse(I, J, V, N * N, N * N))
-    A_gpu .*= Float32(D / dx^2)
+    A_gpu *= Float32(D / dx^2)
     u0_gpu = CUDA.zeros(Float32, N * N)
     return A_gpu, u0_gpu
 end
@@ -59,8 +59,23 @@ function transient_equation_nvidia(N, dx, D; mask_gpu)
         du[N:N:end] .= 0.0f0
         du[masked_indices] .= 0.0f0
     end
-    prob = ODEProblem(f_gpu!, u0, tspan)
+
+
+    f_gpu! = function (du, u, p, t)
+        u[1:N:end] .= C_left_32
+        u[N:N:end] .= C_right_32
+        mul!(du, A, u)
+        du[1:N:end] .= 0.0f0
+        du[N:N:end] .= 0.0f0
+        du[masked_indices] .= 0.0f0
+    end
+    
+    # Explicitly provide the Jacobian `A` to the solver
+    prob = ODEProblem(ODEFunction(f_gpu!, jac=A), u0, tspan)
+
     println("Solving on NVIDIA GPU...")
+
+
     sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
     println("GPU Simulation complete.")
     return sol, sol.t
