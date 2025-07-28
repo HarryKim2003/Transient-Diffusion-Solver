@@ -41,11 +41,21 @@ function build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
             push!(V, diagonal_val)
         end
     end
+    # 1. Scale the values on the CPU *before* creating the GPU matrix
+    V .*= Float32(D / dx^2)
+
+    # 2. Now, create the final GPU matrix with the already-scaled values
     A_gpu = CuSparseMatrixCSR(sparse(I, J, V, N * N, N * N))
-    A_gpu .*= Float32(D / dx^2)
+
     u0_gpu = CUDA.zeros(Float32, N * N)
     return A_gpu, u0_gpu
 end
+#     A_gpu = CuSparseMatrixCSR(sparse(I, J, V, N * N, N * N))
+#     A_gpu .*= Float32(D / dx^2)
+
+#     u0_gpu = CUDA.zeros(Float32, N * N)
+#     return A_gpu, u0_gpu
+# end
 
 function transient_equation_nvidia(N, dx, D; mask_gpu)
     A, u0 = build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
