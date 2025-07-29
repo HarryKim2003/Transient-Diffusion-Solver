@@ -57,6 +57,8 @@ using Base.Threads
 using LsqFit
 using Tortuosity
 using Tortuosity: tortuosity, vec_to_grid
+using CUDSS
+using LinearSolve
 
 try
     using CUDA
@@ -84,16 +86,14 @@ println("hello world")
 # --- Global Configuration ---
 const selected_backend = :nvidia  # Options: :nvidia, :amd, :cpu
 const N = 40
-const L = 0.01
+const L = 0.01f0
 const differential_x = L / N
-const D = 2.09488e-5f0
+const D = 2.09488f-5
 const tspan = (0.0f0, 5.0f0)
 const C_left = 1.0f0
 const C_right = 0.0f0
 const sphere_radius = 3
 const num_spheres = 5
-
-
 
 
 function main()

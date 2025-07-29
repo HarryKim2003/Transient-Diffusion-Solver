@@ -13,6 +13,16 @@
 
 ## AMD part hasn't been tested yet... 
 
+
+try
+    using CUDSS
+    println("NVIDIA CUDSS.jl package loaded successfully for direct sparse solvers.")
+catch
+    println("Could not load CUDSS.jl. The LUFactorization solver will not be available.")
+end
+
+
+
 # ------------------------- NVIDIA GPU VARIANT ------------------------- #
 function build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
     I = Int32[]
@@ -69,9 +79,13 @@ function transient_equation_nvidia(N, dx, D; mask_gpu)
         du[N:N:end] .= 0.0f0
         du[masked_indices] .= 0.0f0
     end
-    prob = ODEProblem(f_gpu!, u0, tspan)
+    func = ODEFunction(f_gpu!; jac_prototype=A, jac=(J, u, p, t) -> nothing)
+    prob = ODEProblem(func, u0, tspan)
+
     println("Solving on NVIDIA GPU...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    # This solver could be faster... but causing errors with GPU 
+    # sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05f0)
+    sol = solve(prob, ROCK4(); saveat=0.05f0)
     println("GPU Simulation complete.")
     return sol, sol.t
 end

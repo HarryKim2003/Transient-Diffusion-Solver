@@ -9,7 +9,7 @@
 ## File: Contains  helper functrions for visualization/geometry
 
 function generate_mask(N, sphere_radius, num_spheres)
-    mask = ones(Float64, N, N)
+    mask = ones(Float32, N, N)
     rng = MersenneTwister(1234) # for reproducibility
     for _ in 1:num_spheres
         x_c = rand(rng, sphere_radius+1:N-sphere_radius)
