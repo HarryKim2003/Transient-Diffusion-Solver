@@ -57,6 +57,11 @@ end
 #     return A_gpu, u0_gpu
 # end
 
+
+#GPU Wants any operations that's passed to solver Vectorized 
+# FIt the integration over time instead 
+# Use Flux vs Time instead of using time 
+
 function transient_equation_nvidia(N, dx, D; mask_gpu)
     A, u0 = build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
     C_left_32, C_right_32 = Float32(C_left), Float32(C_right)

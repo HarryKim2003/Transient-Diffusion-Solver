@@ -110,7 +110,7 @@ include("analysis.jl")
 println("hello world")
 
 # --- Global Configuration ---
-const selected_backend = :nvidia  # Options: :nvidia, :amd, :cpu
+const selected_backend = :cpu  # Options: :nvidia, :amd, :cpu
 const N = 40
 const L = 0.01f0
 const differential_x = L / N
@@ -119,7 +119,7 @@ const tspan = (0.0f0, 5.0f0)
 const C_left = 1.0f0
 const C_right = 0.0f0
 const sphere_radius = 3
-const num_spheres = 0
+const num_spheres = 5
 
 
 function main()
