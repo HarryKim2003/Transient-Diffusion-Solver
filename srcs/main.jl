@@ -5,6 +5,7 @@
 # Date: June 1st, 2025
 # 2B URA Project: Porous Materials Transitive Equation solver for Deff 
 # For Professor Jeff Gostick 
+# Shoutout to Matthews Ma for graciously allowing me to borrow his GPU for this program 
 
 
 #!!!! IMPORTANT !!!!
@@ -81,6 +82,9 @@ using Base.Threads
 using LsqFit
 using Tortuosity
 using Tortuosity: tortuosity, vec_to_grid
+using CUDSS
+using LinearSolve
+using DiffEqGPU
 
 try
     using CUDA
@@ -106,18 +110,16 @@ include("analysis.jl")
 println("hello world")
 
 # --- Global Configuration ---
-const BACKEND = :cpu  # Options: :nvidia, :amd, :cpu
+const selected_backend = :nvidia  # Options: :nvidia, :amd, :cpu
 const N = 40
-const L = 0.01
-const dx = L / N
-const D = 2.09488e-5
-const tspan = (0.0, 5.0)
-const C_left = 1.0
-const C_right = 0.0
-const sphere_radius = 0
+const L = 0.01f0
+const differential_x = L / N
+const D = 2.09488f-5
+const tspan = (0.0f0, 5.0f0)
+const C_left = 1.0f0
+const C_right = 0.0f0
+const sphere_radius = 3
 const num_spheres = 0
-
-
 
 
 function main()
@@ -128,30 +130,37 @@ function main()
     local sol, sim_times
 
     # 3. Run the simulation using the selected backend
-    if BACKEND === :nvidia
+    if selected_backend === :nvidia
         if !isdefined(Main, :CUDA) || !CUDA.functional()
             @error "NVIDIA backend selected, but CUDA is not functional. Falling back to CPU."
-            sol, sim_times = transient_equation_cpu(N, dx, D; mask=mask_cpu)
+            sol, sim_times = transient_equation_cpu(N, differential_x, D; mask=mask_cpu)
+            println("hsidfjslakjgd")
+
         else
             mask_gpu = CuArray(mask_cpu)
-            sol, sim_times = transient_equation_nvidia(N, dx, D; mask_gpu=mask_gpu)
+            sol, sim_times = transient_equation_nvidia(N, differential_x, D; mask_gpu=mask_gpu)
+            println("hsidfjslakjgd")
         end
-    elseif BACKEND === :amd
+    elseif selected_backend === :amd
         if !isdefined(Main, :AMDGPU) || !AMDGPU.functional()
             @error "AMD backend selected, but AMDGPU is not functional. Falling back to CPU."
-            sol, sim_times = transient_equation_cpu(N, dx, D; mask=mask_cpu)
+            sol, sim_times = transient_equation_cpu(N, differential_x, D; mask=mask_cpu)
         else
             mask_gpu = ROCArray(mask_cpu)
-            sol, sim_times = transient_equation_amd(N, dx, D; mask_gpu=mask_gpu)
+            sol, sim_times = transient_equation_amd(N, differential_x, D; mask_gpu=mask_gpu)
+            println("hsidfjslakjgd")
+
         end
     else # Default to CPU
-        sol, sim_times = transient_equation_cpu(N, dx, D; mask=mask_cpu)
+        sol, sim_times = transient_equation_cpu(N, differential_x, D; mask=mask_cpu)
+        println("hsidfjslakjgd")
+
     end
 
     # 4. Post-processing and analysis
     visualize_final_concentration(sol, C_left, C_right)
-    fit_multiple_virtual_pores(sol, N, dx, L, sim_times, C_left, C_right)
-    D_Eff_array = solve_Deff(sol, N, dx, L, sim_times, mask_cpu, C_left, C_right)
+    fit_multiple_virtual_pores(sol, N, differential_x, L, sim_times, C_left, C_right)
+    D_Eff_array = solve_Deff(sol, N, differential_x, L, sim_times, mask_cpu, C_left, C_right)
 
     if !isempty(D_Eff_array)
         D_Eff = D_Eff_array[end]

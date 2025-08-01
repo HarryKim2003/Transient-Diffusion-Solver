@@ -9,7 +9,7 @@
 ## File: Contains  helper functrions for visualization/geometry
 
 function generate_mask(N, sphere_radius, num_spheres)
-    mask = ones(Float64, N, N)
+    mask = ones(Float32, N, N)
     rng = MersenneTwister(1234) # for reproducibility
     for _ in 1:num_spheres
         x_c = rand(rng, sphere_radius+1:N-sphere_radius)
@@ -27,7 +27,7 @@ function visualize_final_concentration(sol, C_left, C_right)
     final_C_cpu = reshape(Array(sol.u[end]), N, N) # Copy to CPU
     final_C_norm = (final_C_cpu .- C_right) ./ (C_left - C_right)
     p = heatmap(final_C_norm',
-        title="Final Concentration ($(BACKEND) backend)",
+        title="Final Concentration ($(selected_backend) backend)",
         yflip=true, colorbar=true, c=reverse(ColorSchemes.rainbow.colors))
     display(p)
 end

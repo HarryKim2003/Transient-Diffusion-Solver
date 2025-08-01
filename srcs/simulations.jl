@@ -41,11 +41,21 @@ function build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
             push!(V, diagonal_val)
         end
     end
+    # 1. Scale the values on the CPU *before* creating the GPU matrix
+    V .*= Float32(D / dx^2)
+
+    # 2. Now, create the final GPU matrix with the already-scaled values
     A_gpu = CuSparseMatrixCSR(sparse(I, J, V, N * N, N * N))
-    A_gpu .*= Float32(D / dx^2)
+
     u0_gpu = CUDA.zeros(Float32, N * N)
     return A_gpu, u0_gpu
 end
+#     A_gpu = CuSparseMatrixCSR(sparse(I, J, V, N * N, N * N))
+#     A_gpu .*= Float32(D / dx^2)
+
+#     u0_gpu = CUDA.zeros(Float32, N * N)
+#     return A_gpu, u0_gpu
+# end
 
 function transient_equation_nvidia(N, dx, D; mask_gpu)
     A, u0 = build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
@@ -59,9 +69,14 @@ function transient_equation_nvidia(N, dx, D; mask_gpu)
         du[N:N:end] .= 0.0f0
         du[masked_indices] .= 0.0f0
     end
-    prob = ODEProblem(f_gpu!, u0, tspan)
+    func = ODEFunction(f_gpu!; jac_prototype=A, jac=(J, u, p, t) -> nothing)
+    prob = ODEProblem(func, u0, tspan)
+
     println("Solving on NVIDIA GPU...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    # This solver could be faster... but causing errors with GPU 
+    # sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05f0)
+    # sol = solve(prob, ROCK4(); saveat=0.01f0, abstol=1e-9, reltol=1e-6)
+    sol = solve(prob, ROCK4(); saveat=0.05f0)
     println("GPU Simulation complete.")
     return sol, sol.t
 end
@@ -115,7 +130,7 @@ function transient_equation_amd(N, dx, D; mask_gpu)
     end
     prob = ODEProblem(f_gpu!, u0, tspan)
     println("Solving on AMD GPU...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sol = solve(prob, KenCarp47(linsolve=KrylovJL_GMRES()); saveat=0.005, abstol=1e-9, reltol=1e-6)
     println("GPU Simulation complete.")
     return sol, sol.t
 end
@@ -161,7 +176,10 @@ function transient_equation_cpu(N, dx, D; mask)
     end
     prob = ODEProblem(f_cpu!, u0, tspan)
     println("Solving on CPU using $(nthreads()) threads...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.005)
+    # sol = solve(prob, ROCK4(); saveat=0.05f0)
+
+
     println("CPU Simulation complete.")
     return sol, sol.t
 end
