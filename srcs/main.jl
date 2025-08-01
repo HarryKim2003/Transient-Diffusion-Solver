@@ -42,6 +42,31 @@
 # Concentration map (img 1) for soem time steps <-- 
 
 
+
+# Focus on GPU wrapping 
+# SEE if we can change the tolerance for the solver so it's more accurate --> Smaller time steps? 
+# If time, find way to choose concentration 
+
+
+
+#Tortuosity from any Time. Any (x,y) and time 
+# Pick random spots in the domain, and for that specific spot, at each time, what was the concentration
+# So like a two col vector 
+# (Could be a useful API feature) <--just tell the code which pixel to store to efficient. (Probe spots, maybe like half a dozen)
+# (New column for each pixel choice) <-- Concentration ateach of those locations 
+# Can do fick's law analysis on each of those points, ideally get the same Deff 
+
+# Main output column is t, c1, c2, c3, c4... 
+# Then it can be passed into another function that Fick's laws to each of the columns 
+
+# Or maybe take every pixel of a single column (in heatmap) and average it out
+# Or maybe a patch (simulates a probe) 
+
+# Easiest thing: Return Concentration at specified pixels. Higher level wrapper can use it later. 
+
+#Send Github to Prof Gostick 
+
+
 # --- Package Loading ---
 using OrdinaryDiffEq
 using DifferentialEquations
@@ -89,8 +114,8 @@ const D = 2.09488e-5
 const tspan = (0.0, 5.0)
 const C_left = 1.0
 const C_right = 0.0
-const sphere_radius = 3
-const num_spheres = 5
+const sphere_radius = 0
+const num_spheres = 0
 
 
 
