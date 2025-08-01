@@ -59,6 +59,7 @@ using Tortuosity
 using Tortuosity: tortuosity, vec_to_grid
 using CUDSS
 using LinearSolve
+using DiffEqGPU
 
 try
     using CUDA
@@ -93,7 +94,7 @@ const tspan = (0.0f0, 5.0f0)
 const C_left = 1.0f0
 const C_right = 0.0f0
 const sphere_radius = 3
-const num_spheres = 5
+const num_spheres = 0
 
 
 function main()
@@ -108,9 +109,12 @@ function main()
         if !isdefined(Main, :CUDA) || !CUDA.functional()
             @error "NVIDIA backend selected, but CUDA is not functional. Falling back to CPU."
             sol, sim_times = transient_equation_cpu(N, differential_x, D; mask=mask_cpu)
+            println("hsidfjslakjgd")
+
         else
             mask_gpu = CuArray(mask_cpu)
             sol, sim_times = transient_equation_nvidia(N, differential_x, D; mask_gpu=mask_gpu)
+            println("hsidfjslakjgd")
         end
     elseif selected_backend === :amd
         if !isdefined(Main, :AMDGPU) || !AMDGPU.functional()
@@ -119,9 +123,13 @@ function main()
         else
             mask_gpu = ROCArray(mask_cpu)
             sol, sim_times = transient_equation_amd(N, differential_x, D; mask_gpu=mask_gpu)
+            println("hsidfjslakjgd")
+
         end
     else # Default to CPU
         sol, sim_times = transient_equation_cpu(N, differential_x, D; mask=mask_cpu)
+        println("hsidfjslakjgd")
+
     end
 
     # 4. Post-processing and analysis

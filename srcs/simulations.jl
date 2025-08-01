@@ -13,16 +13,6 @@
 
 ## AMD part hasn't been tested yet... 
 
-
-try
-    using CUDSS
-    println("NVIDIA CUDSS.jl package loaded successfully for direct sparse solvers.")
-catch
-    println("Could not load CUDSS.jl. The LUFactorization solver will not be available.")
-end
-
-
-
 # ------------------------- NVIDIA GPU VARIANT ------------------------- #
 function build_diffusion_matrix_nvidia(N, dx, D, mask_gpu)
     I = Int32[]
@@ -85,6 +75,7 @@ function transient_equation_nvidia(N, dx, D; mask_gpu)
     println("Solving on NVIDIA GPU...")
     # This solver could be faster... but causing errors with GPU 
     # sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05f0)
+    # sol = solve(prob, ROCK4(); saveat=0.01f0, abstol=1e-9, reltol=1e-6)
     sol = solve(prob, ROCK4(); saveat=0.05f0)
     println("GPU Simulation complete.")
     return sol, sol.t
@@ -139,7 +130,7 @@ function transient_equation_amd(N, dx, D; mask_gpu)
     end
     prob = ODEProblem(f_gpu!, u0, tspan)
     println("Solving on AMD GPU...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sol = solve(prob, KenCarp47(linsolve=KrylovJL_GMRES()); saveat=0.005, abstol=1e-9, reltol=1e-6)
     println("GPU Simulation complete.")
     return sol, sol.t
 end
@@ -185,7 +176,10 @@ function transient_equation_cpu(N, dx, D; mask)
     end
     prob = ODEProblem(f_cpu!, u0, tspan)
     println("Solving on CPU using $(nthreads()) threads...")
-    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.05)
+    sol = solve(prob, KenCarp4(linsolve=KrylovJL_GMRES()); saveat=0.005)
+    # sol = solve(prob, ROCK4(); saveat=0.05f0)
+
+
     println("CPU Simulation complete.")
     return sol, sol.t
 end
