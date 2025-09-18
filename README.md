@@ -1,5 +1,5 @@
 
-# 2B URA Project: High-Performance Porous Media Diffusion Solver in Julia
+# Software ResearchProject: High-Performance Porous Media Diffusion Solver in Julia
 
 **Author:** Harry Kim  
 **Supervisor:** Prof. Jeff Gostick, University of Waterloo  
