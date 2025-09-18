@@ -8,66 +8,6 @@
 # Shoutout to Matthews Ma for graciously allowing me to borrow his GPU for this program 
 
 
-#!!!! IMPORTANT !!!!
-# This program uses Threads, so please allow your program to use more threads.
-# (Thank you ece 252)
-
-# I developed on Windows. To do so, open up cmd, "set JULIA_NUM_THREADS=4", and restart Julia. 
-# Alternatively, in VScode, open up the Command Pallette (command/ctrl + shift + p),
-# Open up "Preferences: Open Settings (UI), search julia numThreads, change the value as desired. 
-
-# Currently, I'm using 12 threads on my Desktop, and 4 on my Laptop. 
-# There must be better ways to make this faster... 
-
-
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-
-
-
-# TO DO LIST # 
-# Find Tortuosity <-- Seperate the code so it looks more like Tortuosity.jl 
-# Fit the analytical solution to the colormap at the second last step in Github 
-
-# Turn Global Variables into input using a simple GUI?
-
-
-# - Start using GPU 
-
-
-#To do for Thurs:
-# Fix Masked concentration 0 being moTre attractive logic
-# Fix D_Eff profile error (Check D_Eff Profile Masking Issue on GPT for notes)
-# Concentration map (img 1) for soem time steps <-- 
-
-
-
-# Focus on GPU wrapping 
-# SEE if we can change the tolerance for the solver so it's more accurate --> Smaller time steps? 
-# If time, find way to choose concentration 
-
-
-
-#Tortuosity from any Time. Any (x,y) and time 
-# Pick random spots in the domain, and for that specific spot, at each time, what was the concentration
-# So like a two col vector 
-# (Could be a useful API feature) <--just tell the code which pixel to store to efficient. (Probe spots, maybe like half a dozen)
-# (New column for each pixel choice) <-- Concentration ateach of those locations 
-# Can do fick's law analysis on each of those points, ideally get the same Deff 
-
-# Main output column is t, c1, c2, c3, c4... 
-# Then it can be passed into another function that Fick's laws to each of the columns 
-
-# Or maybe take every pixel of a single column (in heatmap) and average it out
-# Or maybe a patch (simulates a probe) 
-
-# Easiest thing: Return Concentration at specified pixels. Higher level wrapper can use it later. 
-
-#Send Github to Prof Gostick 
-
-
 # --- Package Loading ---
 using OrdinaryDiffEq
 using DifferentialEquations
