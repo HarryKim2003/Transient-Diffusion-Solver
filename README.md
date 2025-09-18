@@ -61,12 +61,28 @@ Generally, as Julia is designed to be a great choice for scientific research and
 
 ## Project Structure
 
-├── main.jl # Entry point and simulation controller
-├── simulations.jl # GPU/CPU solvers and matrix assembly
-├── analysis.jl # Curve fitting, D_eff profiling, tortuosity calc
-├── utils.jl # Mask generation and visualizations
-├── project.toml # Dependencies and Julia environment
+- main.jl # Entry point and simulation controller
+- simulations.jl # GPU/CPU solvers and matrix assembly
+- analysis.jl # Curve fitting, D_eff profiling, tortuosity calc
+- utils.jl # Mask generation and visualizations
 
+
+## Sample Output
+
+- Final concentration heatmaps (with pore masking)
+- Virtual probe concentration vs. time plots with analytical fits
+- Scatter plots of `D_eff` vs X-position
+- Histograms of pore-level `D_eff` distributions
+
+## Skills Demonstrated
+
+| Category            | Tools / Topics |
+|---------------------|----------------|
+| Performance         | CUDA.jl, SparseArrays, multithreading |
+| Scientific Computing| Transient PDEs, ODE solvers, LsqFit |
+| Software Engineering| Modular design, performance profiling, error handling |
+| Visualization       | Plots.jl, ColorSchemes.jl |
+| Research Application| Porous media, D_eff, tortuosity, fuel cell modeling |
 
 
 
