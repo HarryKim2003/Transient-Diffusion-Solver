@@ -1,3 +1,14 @@
+
+# 2B URA Project: High-Performance Porous Media Diffusion Solver in Julia
+
+**Author:** Harry Kim  
+**Advisor:** Prof. Jeff Gostick, University of Waterloo  
+**GPU Support:** ✅ NVIDIA CUDA  (AMD ROCm in progress)   
+**Threads:** Multi-threaded CPU fallback  
+**Focus:** Scientific computing, numerical simulation, GPU acceleration, physical modeling
+
+## Notes on Running the Program: 
+
 This program uses Threads, so please allow your program to use more threads.
 
 I developed on Windows. To do so, open up cmd, "set JULIA_NUM_THREADS=4", and restart Julia. 
