@@ -98,21 +98,21 @@ Currently, I'm using 12 threads on my Desktop, and 4 on my Laptop.
 
 The following are the list of packages used. Be sure to import them before running main.jl.
 
-OrdinaryDiffEq
-DifferentialEquations
-SparseArrays
-LinearAlgebra
-Plots
-ColorSchemes
-Statistics
-Random
-KrylovKit
-Base.Threads
-LsqFit
-Tortuosity
-Tortuosity: tortuosity, vec_to_grid
-CUDSS
-LinearSolve
-DiffEqGPU
+- OrdinaryDiffEq
+- DifferentialEquations
+- SparseArrays
+- LinearAlgebra
+- Plots
+- ColorSchemes
+- Statistics
+- Random
+- KrylovKit
+- Base.Threads
+- LsqFit
+- Tortuosity
+- Tortuosity: tortuosity, vec_to_grid
+- CUDSS
+- LinearSolve
+- DiffEqGPU
 
 Cheers. 
