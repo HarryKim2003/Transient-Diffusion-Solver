@@ -2,7 +2,7 @@
 # 2B URA Project: High-Performance Porous Media Diffusion Solver in Julia
 
 **Author:** Harry Kim  
-**Advisor:** Prof. Jeff Gostick, University of Waterloo  
+**Supervisor:** Prof. Jeff Gostick, University of Waterloo  
 **GPU Support:** NVIDIA CUDA  (AMD ROCm in progress)   
 **Threads:** Multi-threaded CPU fallback  
 **Focus:** Scientific computing, numerical simulation, GPU acceleration, physical modeling
@@ -24,7 +24,7 @@ The simulation:
 
 
 
-## ⚙️ Features
+## Features
 
 | Feature               | Description                                                                 |
 |----------------------|-----------------------------------------------------------------------------|
@@ -36,6 +36,36 @@ The simulation:
 | Modular Architecture | Clean separation into `simulations.jl`, `analysis.jl`, and `utils.jl`            |
 | Porosity & Tortuosity | Auto-calculates porosity and tortuosity based on the evolving concentration field |
 
+
+
+## Why It Matters
+
+This simulation pipeline supports research in materials such as **fuel cell membranes**, **battery electrodes**, and **nanoporous materials**, where accurate diffusivity prediction is crucial.
+
+Built in **Julia** with a focus on **performance**, **scientific accuracy**, and **software maintainability**, this project reflects the principles expected of real-world production simulations at scale.
+
+Generally, as Julia is designed to be a great choice for scientific research and numeric computation, it was paramount to have a framework that supported transient diffusion calculations in this language. 
+
+
+
+## Technical Highlights
+
+- Thread-safe CPU simulation (`KenCarp4`, `KrylovJL_GMRES`)
+- Sparse matrix assembly optimized for memory locality
+- GPU-compatible masking via broadcast-safe `CuArray` logic
+- Automatic recovery of `D_eff` from 2D field using `LsqFit.jl`
+- Visualization with `Plots.jl`, `ColorSchemes.jl`, and analytical overlays
+- Designed for easy extension to real images (e.g. segmented micro-CT)
+
+---
+
+## Project Structure
+
+├── main.jl # Entry point and simulation controller
+├── simulations.jl # GPU/CPU solvers and matrix assembly
+├── analysis.jl # Curve fitting, D_eff profiling, tortuosity calc
+├── utils.jl # Mask generation and visualizations
+├── project.toml # Dependencies and Julia environment
 
 
 
